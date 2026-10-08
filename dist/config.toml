@@ -4,12 +4,13 @@
 
 [daemon]
 # The person using this machine. They can run `torii up` / `torii portal` without sudo, and the portal
-# browser and notifications open in their session. Default: the owner of the wstunnel config.
+# browser opens in their session. Empty: only root can control toriid.
 operator = ""
 
 [networks]
 # Trusted networks (SSIDs). Only these get LAN access (printers, file sharing, ssh to local hosts).
-# Everything else is treated as hostile.
+# Everything else is treated as hostile. A wired uplink is named "eth:<interface>", e.g. "eth:enp0s31f6"
+# (that trusts any network plugged into that port).
 trusted = []
 
 # Pin a mode per network: skip history and fallbacks, always use this one.
@@ -21,8 +22,9 @@ trusted = []
 [watchdog]
 # Bring protection up automatically at boot / after switching networks.
 auto_bootstrap = true
-# Try to pass click-through captive portals automatically (inside the isolated portal namespace).
-auto_portal = false
+# Pass click-through captive portals ("Accept", "Log in" with nothing to fill in) automatically, inside the
+# isolated portal namespace. Pages that want a password or other input are always left to you.
+auto_portal = true
 # Mode for networks with no history: auto, wireguard, openvpn or wstunnel.
 default_mode = "auto"
 # After switching networks, re-pick the mode from that network's history.
@@ -34,6 +36,10 @@ unknown_max = 3
 # The fallback ladder `torii up` (mode auto) climbs, top first. Rungs that are not configured below
 # are skipped, so the default works whether or not you have OpenVPN or a carrier server.
 ladder = ["wireguard", "openvpn", "wstunnel"]
+
+[wifi]
+# "auto" (iwd if it is running, else NetworkManager), "iwd" or "networkmanager".
+backend = "auto"
 
 [wireguard]
 # wg-quick style config. toriid parses it and configures the interface itself;

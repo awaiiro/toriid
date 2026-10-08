@@ -179,3 +179,15 @@ mod trust_tests {
         assert!(!trust_ok(0, 0o040777));
     }
 }
+
+/// Absolute path of a system tool. Debian keeps some in /usr/sbin (nft, runuser), Arch in /usr/bin; a root
+/// process should not depend on $PATH, so look in the standard places only.
+pub fn tool(name: &str) -> String {
+    for d in ["/usr/bin", "/usr/sbin", "/bin", "/sbin"] {
+        let p = format!("{}/{}", d, name);
+        if Path::new(&p).exists() {
+            return p;
+        }
+    }
+    format!("/usr/bin/{}", name)
+}

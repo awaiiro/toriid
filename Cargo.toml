@@ -1,6 +1,6 @@
 [package]
 name = "toriid"
-version = "0.1.0"
+version = "0.1.1"
 repository = "https://github.com/awaiiro/toriid"
 readme = "README.md"
 keywords = ["vpn", "kill-switch", "wireguard", "captive-portal", "nftables"]

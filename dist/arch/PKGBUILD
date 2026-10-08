@@ -1,6 +1,6 @@
 # Maintainer: awaiiro <332003006+awaiiro@users.noreply.github.com>
 pkgname=toriid
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="Fail-closed network controller for laptops on hostile networks: kill switch, tunnel fallback ladder, captive portals"
 arch=('x86_64' 'aarch64')
@@ -14,7 +14,10 @@ optdepends=(
   'openvpn: TCP rung of the tunnel ladder'
   'wstunnel: TLS rung of the tunnel ladder (needs your own carrier server)'
   'tailscale: tailnet inside the tunnel'
+  'firefox: isolated browser for captive portal logins (torii portal)'
+  'openssh: wstunnel key rotation on your carrier server'
 )
+install=toriid.install
 backup=('etc/toriid/config.toml')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')  # fill in after tagging: updpkgsums
@@ -32,6 +35,7 @@ build() {
 
 check() {
   cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
   cargo test --frozen
 }
 

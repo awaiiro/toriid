@@ -1,7 +1,7 @@
 # Status JSON (schema version 1)
 
-`torii status --json` prints one object; `torii watch` prints one per line, whenever something changes
-(and at least every 50 seconds, so a dead daemon turns into `unknown`). Neither needs root or touches the
+`torii status --json` prints one object; `torii watch` prints one per line whenever something changes. It
+also re-checks every 50 seconds, so a dead daemon turns into `unknown` even though no file changes. Neither needs root or touches the
 network. Within a schema version, fields are only ever added, never renamed or removed.
 
 ```json

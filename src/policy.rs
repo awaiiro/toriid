@@ -103,7 +103,7 @@ pub fn gate(o: &Obs, c: &WdConf) -> Gate {
 }
 
 /// Which mode to switch to on a network change: whatever last worked on this SSID, else BOOTSTRAP_DEFAULT.
-pub fn reevaluate_target(o: &Obs, c: &WdConf, last_ssid: Option<&str>, profile: Option<Mode>, cur: Option<Mode>) -> Option<Mode> {
+pub fn reevaluate_target(o: &Obs, c: &WdConf, last_ssid: Option<&str>, want_rung: Option<Tunnel>, cur: Option<Mode>, actual: Option<Tunnel>) -> Option<Mode> {
     if !c.reevaluate_on_network_change || o.conn != Conn::Full {
         return None;
     }
@@ -112,35 +112,32 @@ pub fn reevaluate_target(o: &Obs, c: &WdConf, last_ssid: Option<&str>, profile: 
     if ssid == last {
         return None;
     }
-    let want = c.mode_pins.iter().find(|(n, _)| n == ssid).and_then(|(_, m)| Mode::parse(m)).filter(|m| m.is_tunnel())
-        .or(profile)
-        .unwrap_or_else(|| Mode::parse(&c.bootstrap_default).unwrap_or(Mode::Auto));
-    (Some(want) != cur).then_some(want)
+    // A pin for the new network wins.
+    if let Some(p) = c.mode_pins.iter().find(|(n, _)| n == ssid).and_then(|(_, m)| Mode::parse(m)).filter(|m| m.is_tunnel()) {
+        return (Some(p) != cur).then_some(p);
+    }
+    match cur {
+        // A manual single-tunnel choice was made for the previous network; on a new one go back to auto.
+        Some(Mode::Only(_)) => Some(Mode::Auto),
+        // Auto already: re-climb only if the running tunnel is not the one this network should start with.
+        Some(Mode::Auto) => (want_rung.is_some() && actual != want_rung).then_some(Mode::Auto),
+        _ => None,
+    }
 }
 
-/// Recovery ladder: first the historically known mode (if different from the current one), then retry
-/// the current one, then the rest in order of increasing penetration.
-pub fn ladder(orig: Option<Mode>, known: Option<Mode>, rungs: &[Tunnel]) -> Vec<Mode> {
-    // Each entry is a single rung, so nothing is tried twice. Auto stands for the top rung.
-    let one = |m: Mode| match m {
-        Mode::Auto => rungs.first().map(|t| Mode::Only(*t)),
-        Mode::Only(_) => Some(m),
-        _ => None,
-    };
-    let mut out: Vec<Mode> = vec![];
-    for m in [known, orig].into_iter().flatten().filter_map(one).chain(rungs.iter().map(|t| Mode::Only(*t))) {
-        if !out.contains(&m) {
-            out.push(m);
-        }
+/// Recovery order: a pinned single tunnel is retried as itself first, then auto climbs the whole ladder.
+pub fn ladder(orig: Option<Mode>) -> Vec<Mode> {
+    match orig {
+        Some(Mode::Only(t)) => vec![Mode::Only(t), Mode::Auto],
+        _ => vec![Mode::Auto],
     }
-    out
 }
 
 /// Who issued the command (the daemon identifies it via SO_PEERCRED on the socket).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Who {
     Root,
-    /// The user of this machine ([daemon] operator in config.toml; defaults to the owner of wstunnel.conf)
+    /// The user of this machine ([daemon] operator in config.toml; no operator if unset)
     Operator,
     Other,
 }
@@ -193,7 +190,15 @@ pub fn phase(intent: Intent, healthy: bool, reason: &str, ks: bool) -> &'static 
     let p = match intent {
         Intent::Mode(Mode::Off) => "off",
         Intent::Mode(Mode::Portal) => "portal",
-        _ => {
+        // No tunnel is wanted-and-up in these states, whatever a "skip:" verdict says about this round.
+        Intent::FailedClosed | Intent::Unknown => {
+            if reason.starts_with("bootstrap:") && healthy {
+                "up"
+            } else {
+                "degraded"
+            }
+        }
+        Intent::Mode(_) => {
             if reason.starts_with("unknown:") {
                 "unknown"
             } else if reason.starts_with("skip:") && reason.contains("settling") {
@@ -223,7 +228,7 @@ pub fn advice(o: &Obs, ks: bool, busy: Option<&str>, busy_for: u64, gave_up: boo
     let net = if wifi.is_empty() { "this network".to_string() } else { wifi.clone() };
     let mk = |key: String, title: String, text: &str, critical: bool| Some(Advice { key, title, text: text.to_string(), critical });
     if gave_up {
-        return mk("gaveup".into(), "All tunnels failed - offline, not leaking".into(), "The watchdog tried WireGuard, TCP and wstunnel and gave up; the kill switch is still on.\nPortal needs a login: torii portal    Go unprotected on purpose: sudo torii down", true);
+        return mk("gaveup".into(), "All tunnels failed - offline, not leaking".into(), "The watchdog tried every tunnel and gave up; the kill switch is still on.\nPortal needs a login: torii portal    Go unprotected on purpose: sudo torii down", true);
     }
     // No physical link, nothing to advise. Observed: wifi dropped before suspend, an advice was computed
     // anyway, the notifier's debounce carried it across the night and popped it 6s after resume
@@ -335,31 +340,35 @@ mod tests {
     }
     #[test]
     fn ladder_order() {
-        let all = [Tunnel::WireGuard, Tunnel::OpenVpn, Tunnel::Wstunnel];
-        let (wg, ov, ws) = (Mode::Only(Tunnel::WireGuard), Mode::Only(Tunnel::OpenVpn), Mode::Only(Tunnel::Wstunnel));
-        assert_eq!(ladder(Some(Mode::Auto), Some(ws), &all), vec![ws, wg, ov]);
-        assert_eq!(ladder(Some(ws), None, &all), vec![ws, wg, ov]);
-        assert_eq!(ladder(None, None, &all), vec![wg, ov, ws]);
-        // a ladder without wstunnel never tries it, unless the user pinned it
-        assert_eq!(ladder(Some(Mode::Auto), None, &all[..2]), vec![wg, ov]);
-        assert_eq!(ladder(Some(ws), None, &all[..2]), vec![ws, wg, ov]);
+        assert_eq!(ladder(Some(Mode::Auto)), vec![Mode::Auto]);
+        assert_eq!(ladder(None), vec![Mode::Auto]);
+        let ws = Mode::Only(Tunnel::Wstunnel);
+        assert_eq!(ladder(Some(ws)), vec![ws, Mode::Auto]);
     }
     #[test]
     fn reevaluate_only_on_change_with_full() {
         let o = obs();
         let c = cfg();
-        assert_eq!(reevaluate_target(&o, &c, Some("Y"), Some(Mode::Auto), Some(Mode::Only(Tunnel::Wstunnel))), Some(Mode::Auto));
-        assert_eq!(reevaluate_target(&o, &c, Some("X"), Some(Mode::Auto), Some(Mode::Only(Tunnel::Wstunnel))), None);
-        assert_eq!(reevaluate_target(&o, &c, Some("Y"), None, Some(Mode::Auto)), None, "default is auto and current is already auto");
+        let (wg, ws) = (Some(Tunnel::WireGuard), Some(Tunnel::Wstunnel));
+        // new network, auto, running the wrong rung for it: re-climb
+        assert_eq!(reevaluate_target(&o, &c, Some("Y"), wg, Some(Mode::Auto), ws), Some(Mode::Auto));
+        // same network: nothing
+        assert_eq!(reevaluate_target(&o, &c, Some("X"), wg, Some(Mode::Auto), ws), None);
+        // already on the right rung
+        assert_eq!(reevaluate_target(&o, &c, Some("Y"), wg, Some(Mode::Auto), wg), None);
+        // manual single tunnel from the previous network: back to auto
+        assert_eq!(reevaluate_target(&o, &c, Some("Y"), wg, Some(Mode::Only(Tunnel::Wstunnel)), ws), Some(Mode::Auto));
         let mut o2 = obs();
         o2.conn = Conn::Limited;
-        assert_eq!(reevaluate_target(&o2, &c, Some("Y"), Some(Mode::Auto), Some(Mode::Only(Tunnel::Wstunnel))), None);
+        assert_eq!(reevaluate_target(&o2, &c, Some("Y"), wg, Some(Mode::Auto), ws), None);
     }
     #[test]
     fn phase_leaking_vs_degraded() {
         assert_eq!(phase(Intent::Mode(Mode::Auto), false, "x", true), "degraded");
         assert_eq!(phase(Intent::Mode(Mode::Auto), false, "x", false), "leaking");
         assert_eq!(phase(Intent::Mode(Mode::Auto), true, "ok:192.0.2.1", false), "leaking", "working tunnel without kill switch is not protected");
+        assert_eq!(phase(Intent::FailedClosed, true, "skip:bootstrap cooling down", true), "degraded", "no tunnel is never protected");
+        assert_eq!(phase(Intent::Unknown, true, "skip:no physical link", true), "degraded");
         assert_eq!(phase(Intent::Mode(Mode::Auto), true, "skip:mode switched 5s ago, still settling", true), "establishing");
         assert_eq!(phase(Intent::Mode(Mode::Auto), true, "unknown: all 3", true), "unknown");
     }

@@ -19,8 +19,9 @@ The script prints the client-side `wstunnel.conf` values at the end.
 | `install.sh` | idempotent setup: wstunnel (loopback only), Caddy with a real certificate, a decoy site, automatic rollback if a re-run breaks a working deployment |
 | `wst-keys.sh` | key management, installed as `/usr/local/sbin/wst-keys`; driven by `torii wst rotate / retire / keys / audit` over ssh |
 
-Key rotation from the laptop needs `WST_SSH` and `WST_SSH_KEY` in the client's `wstunnel.conf`, and
-that ssh user needs passwordless `sudo` (the client pushes the current `wst-keys.sh` before each call, so both ends always run the same version).
+Key rotation and `torii wst audit` need `WST_SSH` and `WST_SSH_KEY` in the client's `wstunnel.conf`, and
+that ssh user needs passwordless `sudo` (the client pushes the current `wst-keys.sh` before each call, so
+both ends always run the same version; the audit reads wstunnel's journal).
 
 **Choosing a domain:** an active prober should see an ordinary small website. Avoid names containing
 vpn, proxy, tunnel and the like.

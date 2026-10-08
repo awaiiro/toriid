@@ -123,7 +123,7 @@ vpn nft -f - <<'EOF'
 table ip vpn {
     chain post {
         type nat hook postrouting priority srcnat;
-        ip saddr 10.64.0.0/24 oifname "up-i" masquerade
+        ip saddr 10.77.0.0/24 oifname "up-i" masquerade
     }
 }
 EOF
@@ -132,13 +132,13 @@ mkdir -p /etc/toriid; chmod 755 /etc/toriid
 umask 077
 SK=$(wg genkey); SP=$(echo "$SK" | wg pubkey); CK=$(wg genkey); CP=$(echo "$CK" | wg pubkey)
 vpn ip link add wg0 type wireguard
-vpn wg set wg0 listen-port 51820 private-key <(echo "$SK") peer "$CP" allowed-ips 10.64.0.2/32
-vpn ip addr add 10.64.0.1/24 dev wg0; vpn ip link set wg0 up
+vpn wg set wg0 listen-port 51820 private-key <(echo "$SK") peer "$CP" allowed-ips 10.77.0.2/32
+vpn ip addr add 10.77.0.1/24 dev wg0; vpn ip link set wg0 up
 mkdir -p /etc/wireguard /etc/toriid
 cat > /etc/wireguard/wg0.conf <<EOF
 [Interface]
 PrivateKey = $CK
-Address = 10.64.0.2/32
+Address = 10.77.0.2/32
 DNS = 1.1.1.1
 
 [Peer]
@@ -210,6 +210,14 @@ check "other users may not read the wstunnel log" not runuser -u guest -- torii 
 echo "== E: daemon restart keeps protection"
 systemctl restart toriid
 check "protected again after restart" wait_state protected 60
+
+echo "== F: boot without auto_portal comes up by itself"
+sed -i '/^\[watchdog\]/a auto_portal = false' /etc/toriid/config.toml
+systemctl stop toriid; rm -f /run/toriid/mode /run/toriid/health.json; nft -f /var/lib/toriid/killswitch.nft
+ip link del wg0 2>/dev/null
+systemctl start toriid
+check "protected after a restart with only the boot kill switch loaded" wait_state protected 150
+sed -i '/^auto_portal = false$/d' /etc/toriid/config.toml
 
 echo "== teardown"
 torii down >/dev/null 2>&1

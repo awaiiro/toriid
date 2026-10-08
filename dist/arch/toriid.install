@@ -1,0 +1,11 @@
+post_install() {
+  systemd-tmpfiles --create toriid.conf
+  echo "toriid: set [daemon] operator in /etc/toriid/config.toml, put your WireGuard config at"
+  echo "/etc/wireguard/wg0.conf, then:"
+  echo "  sudo systemctl enable --now toriid-killswitch-boot toriid"
+  echo "  systemctl --user enable --now toriid-notify"
+}
+
+post_upgrade() {
+  systemd-tmpfiles --create toriid.conf
+}

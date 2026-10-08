@@ -54,7 +54,7 @@ pub async fn run() -> Result<()> {
 
     println!("── WireGuard genetlink transaction");
     let conf = wg::WgConf::parse(
-        "[Interface]\nPrivateKey = yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=\nAddress = 10.64.0.2/32\n[Peer]\nPublicKey = xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\nAllowedIPs = 0.0.0.0/0\nEndpoint = 10.99.97.5:51820\nPersistentKeepalive = 25\n",
+        "[Interface]\nPrivateKey = yAnz5TF+lXXJte14tji3zlMNq+hd2rYUIgJBgB3fBmk=\nAddress = 10.77.0.2/32\n[Peer]\nPublicKey = xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\nAllowedIPs = 0.0.0.0/0\nEndpoint = 10.99.97.5:51820\nPersistentKeepalive = 25\n",
     )?;
     match wg::up(&nl, &conf, None).await {
         Ok(()) => {

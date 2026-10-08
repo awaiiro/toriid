@@ -75,7 +75,7 @@ pub async fn open(uid: u32, wl: Option<&str>, url: Option<&str>) -> Result<Strin
     // fixed directory, removed when the unit stops (ExecStopPost, as root); sh removes it then mkdir -m 700,
     // so if someone else pre-created the directory we fail instead of using it
     let script = format!(
-        "d={dir}; rm -rf \"$d\" 2>/dev/null; mkdir -m 700 \"$d\" || exit 1\ncat > \"$d/user.js\" <<'NETD_EOF'\n{js}NETD_EOF\nexec firefox --no-remote --profile \"$d\" \"$1\"\n",
+        "d={dir}; rm -rf \"$d\" 2>/dev/null; mkdir -m 700 \"$d\" || exit 1\ncat > \"$d/user.js\" <<'TORIID_EOF'\n{js}TORIID_EOF\nexec firefox --no-remote --profile \"$d\" \"$1\"\n",
         dir = dir,
         js = USER_JS
     );
@@ -83,10 +83,10 @@ pub async fn open(uid: u32, wl: Option<&str>, url: Option<&str>) -> Result<Strin
         .args(["--unit", UNIT, "--collect", "--quiet", "--no-block"])
         .args(["-p", &format!("ExecStopPost=/bin/rm -rf {}", dir)])
         .args(["-p", "KillMode=control-group", "-p", "TimeoutStopSec=5"])
-        .args(["/usr/bin/ip", "netns", "exec", "portal", "/usr/bin/runuser", "-u", &pw.name, "--", "/usr/bin/env", "-i"])
+        .args([crate::util::tool("ip").as_str(), "netns", "exec", "portal", crate::util::tool("runuser").as_str(), "-u", &pw.name, "--", crate::util::tool("env").as_str(), "-i"])
         .arg(format!("HOME={}", pw.home))
         .arg(format!("USER={}", pw.name))
-        .arg("PATH=/usr/local/bin:/usr/bin:/bin")
+        .arg("PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
         .arg(format!("WAYLAND_DISPLAY={}", wl))
         .arg(format!("XDG_RUNTIME_DIR={}", rt))
         .arg(format!("DBUS_SESSION_BUS_ADDRESS=unix:path={}/bus", rt))
@@ -126,6 +126,6 @@ mod tests {
     }
     #[test]
     fn user_js_has_no_heredoc_terminator() {
-        assert!(!USER_JS.lines().any(|l| l == "NETD_EOF"));
+        assert!(!USER_JS.lines().any(|l| l == "TORIID_EOF"));
     }
 }

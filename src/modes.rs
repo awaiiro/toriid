@@ -1,4 +1,4 @@
-//! Mode actions: teardown/bring-up sequences for normal / tcp / wstunnel / portal / off.
+//! Mode actions: auto (climb the tunnel ladder), a single tunnel, portal, off.
 //! Every action starts by tearing everything down, so they are re-entrant. All modes share the same
 //! nftables ruleset; they differ only in which path the tunnel takes.
 use crate::config::WstConf;
@@ -78,12 +78,10 @@ impl Ctx {
 }
 
 // ── shared helpers ────────────────────────────────────────────
-fn load_rules_and_class(ctx: &Ctx) -> Result<()> {
-    nft::load_killswitch()?;
-    // The whole table is deleted and rebuilt, taking lan_allow with it - it must be repopulated by
-    // reclassifying after load, otherwise every mode switch cuts LAN SSH sessions
-    let _ = ctx;
-    Ok(())
+/// The whole table is deleted and rebuilt, taking lan_allow with it: callers must `repopulate_class`
+/// right after, otherwise every mode switch cuts LAN ssh sessions.
+fn load_rules() -> Result<()> {
+    nft::load_killswitch()
 }
 
 async fn ovpn_up() -> Result<bool> {
@@ -287,7 +285,7 @@ async fn warn_foreign_forward_drop(ctx: &Ctx) {
 }
 
 async fn cur_ssid() -> Option<String> {
-    crate::wifi::ssid().await
+    crate::netclass::network_id().await
 }
 
 /// After loading rules, reclassify the network and repopulate lan_allow.
@@ -337,7 +335,10 @@ pub async fn apply(ctx: &mut Ctx, m: Mode) -> Result<()> {
         crate::portal_browser::close();
     }
     match m {
-        Mode::Auto => climb(ctx, &ladder(), true).await,
+        Mode::Auto => {
+            let ssid = cur_ssid().await;
+            climb(ctx, &ladder_for(ssid.as_deref()), true).await
+        }
         Mode::Only(t) => climb(ctx, &[t], false).await,
         Mode::Portal => mode_portal(ctx).await,
         Mode::Off => mode_off(ctx).await,
@@ -347,6 +348,31 @@ pub async fn apply(ctx: &mut Ctx, m: Mode) -> Result<()> {
 /// The configured ladder ([tunnels] ladder), minus rungs that are not set up on this machine.
 pub fn ladder() -> Vec<Tunnel> {
     crate::settings::get().tunnels.ladder.iter().filter_map(|t| Tunnel::parse(t)).filter(|t| available(*t)).collect()
+}
+
+/// The ladder for this network: the rung that worked here last time first, then the rest in order.
+pub fn ladder_for(ssid: Option<&str>) -> Vec<Tunnel> {
+    let mut l = ladder();
+    if let Some(r) = ssid.and_then(state::remembered_rung) {
+        if let Some(i) = l.iter().position(|t| *t == r) {
+            let t = l.remove(i);
+            l.insert(0, t);
+        }
+    }
+    l
+}
+
+/// Which tunnel is actually carrying traffic right now (not what the intent names).
+pub async fn actual_tunnel(ctx: &Ctx) -> Option<Tunnel> {
+    if ctx.wst.running() {
+        Some(Tunnel::Wstunnel)
+    } else if ctx.nl.link_exists(WG_IF).await {
+        Some(Tunnel::WireGuard)
+    } else if ctx.nl.link_exists(&ovpn_if()).await {
+        Some(Tunnel::OpenVpn)
+    } else {
+        None
+    }
 }
 
 /// Is this rung configured at all (config files and binaries present)?
@@ -375,7 +401,7 @@ pub async fn tunnels_down(ctx: &mut Ctx) {
 async fn climb(ctx: &mut Ctx, rungs: &[Tunnel], auto: bool) -> Result<()> {
     warn_exit_node(ctx).await;
     netns::down(&ctx.nl).await;
-    load_rules_and_class(ctx)?;
+    load_rules()?;
     repopulate_class(ctx).await;
     let intent = if auto { Mode::Auto } else { Mode::Only(rungs[0]) };
     if rungs.is_empty() {
@@ -389,13 +415,16 @@ async fn climb(ctx: &mut Ctx, rungs: &[Tunnel], auto: bool) -> Result<()> {
     let mut last_err = anyhow!("not tried");
     for (i, t) in rungs.iter().enumerate() {
         tunnels_down(ctx).await;
-        // Written before the attempt so the watchdog doesn't grab the wheel midway. In auto mode a fallback
-        // rung is recorded as itself: the watchdog then knows what is actually running.
-        state::write_intent(Intent::Mode(if auto && i == 0 { Mode::Auto } else { Mode::Only(*t) }));
+        // Written before the attempt so the watchdog doesn't grab the wheel midway. Auto stays auto on every
+        // rung; what actually runs is judged from the interfaces, and remembered per network below.
+        state::write_intent(Intent::Mode(intent));
         match rung_up(ctx, *t, ssid.as_deref()).await {
             Ok(ip) => {
                 if auto && i > 0 {
                     ctx.jlog(&format!("fell back to {}", t.as_str()));
+                }
+                if let Some(s) = ssid.as_deref() {
+                    state::remember_rung(s, *t);
                 }
                 ctx.io.ok(format!("{} | {} | exit {}", intent, t.as_str(), ip));
                 return Ok(());
@@ -414,7 +443,7 @@ async fn climb(ctx: &mut Ctx, rungs: &[Tunnel], auto: bool) -> Result<()> {
         ctx.io.hint("captive portal?  torii portal        really go unprotected (exposes your real identity)?  sudo torii down");
         return Err(anyhow!("all tunnels failed, fail-closed"));
     }
-    ctx.io.hint("to get online: torii up (tries the whole ladder), or sudo torii down");
+    ctx.io.hint("try the whole ladder: torii up auto        go unprotected: sudo torii down");
     Err(last_err)
 }
 
@@ -524,7 +553,7 @@ async fn mode_portal(ctx: &mut Ctx) -> Result<()> {
     wg::down(&ctx.nl).await;
     ts_rule_off(ctx).await;
     ts_dns_uncatchall(ctx).await;
-    load_rules_and_class(ctx)?;
+    load_rules()?;
     repopulate_class(ctx).await;
     let phy = ctx.nl.phy_dev().await?;
     let gw = match &phy {
@@ -612,7 +641,7 @@ pub async fn status_lines(nl: &Nl, extra: Option<&StatusExtra>) -> Vec<String> {
         // A tunnel the daemon started knows its variant; an adopted one (daemon restarted) is looked up by SSID
         let mut v = extra.and_then(|e| e.wst_variant.clone());
         if v.is_none() {
-            if let Some(ssid) = crate::wifi::ssid().await {
+            if let Some(ssid) = crate::netclass::network_id().await {
                 v = wst::variant_get(&ssid).map(|x| x.as_str().to_string());
             }
         }

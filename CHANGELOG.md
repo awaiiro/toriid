@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.1
+
+Fixes from a full review after the first release.
+
+- Protection now comes up by itself after boot on any network. Before, with the default config, the
+  watchdog waited for a captive portal forever because the kill switch blocks its own connectivity probe.
+- A non-root operator could inject extra lines into the root-owned wstunnel config through key rotation
+  and open holes in the kill switch. Keys are now validated.
+- `auto` no longer pins itself to a fallback tunnel; it remembers per network where to start instead.
+- The status no longer shows `protected` while no tunnel is up (failed-closed).
+- A trusted Wi-Fi no longer grants LAN access to a wired uplink on the same machine.
+- Key rotation works as the operator (the daily user timer used to fail).
+- Debian/Ubuntu: boot unit and portal browser no longer assume tools live in /usr/bin.
+- `auto_portal` is on by default (click-through pages only; login pages are always left to you).
+- Carrier server: clients send the right Host header; Caddy serves the real certificate for any SNI.
+- Config check validates `default_mode` and `[wifi] backend`; network class is reported as `trusted`.
+
 ## 0.1.0
 
 First release.

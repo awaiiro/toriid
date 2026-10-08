@@ -78,7 +78,7 @@ ok "public IP $PUBLIC_IP"
 if [ "$SSLIP" = 1 ]; then
     DOMAIN="${PUBLIC_IP//./-}.sslip.io"
 fi
-resolved=$(getent ahostsv4 "$DOMAIN" | awk 'NR==1{print $1}')
+resolved=$(getent ahostsv4 "$DOMAIN" | awk 'NR==1{print $1}' || true)
 [ "$resolved" = "$PUBLIC_IP" ] || die "$DOMAIN resolves to '${resolved:-nothing}', not $PUBLIC_IP; fix DNS first"
 ok "$DOMAIN -> $PUBLIC_IP"
 if ss -Htlnp 'sport = :443' | grep -qv caddy; then
@@ -149,6 +149,7 @@ else
     ok "keeping existing keys ($(grep -c . "$D/keys"))"
 fi
 printf '%s\n' "$UPSTREAM" > "$D/target"; chmod 600 "$D/target"
+printf '%s\n' "$DOMAIN" > "$D/domain"     # wst-keys' self-test sends it as Host, like a real client
 /usr/local/sbin/wst-keys init
 
 hdr "5. wstunnel service"
@@ -213,7 +214,7 @@ site_body() {
         root * /var/www/decoy
         file_server
     }
-    # No access log: a relay should not keep a record of who connected when.
+    # No Caddy access log. (wstunnel's own journal keeps the X-Forwarded-For lines `torii wst audit` reads.)
     log {
         output discard
     }
@@ -224,8 +225,9 @@ EOF
     echo "{"
     echo "    # Only 443 is needed: certificates via TLS-ALPN-01, no port-80 redirect listener."
     echo "    auto_https disable_redirects"
-    echo "    # Clients that send no SNI get the real certificate instead of a TLS alert."
+    echo "    # Clients that send no SNI, or a disguised one, get the real certificate instead of a TLS alert."
     echo "    default_sni ${DOMAIN}"
+    echo "    fallback_sni ${DOMAIN}"
     echo "}"
     echo
     echo "${DOMAIN} {"

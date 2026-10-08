@@ -91,10 +91,9 @@ impl WstConf {
         let missing: Vec<&str> = WST_REQUIRED_KEYS.iter().copied().filter(|k| !m.contains_key(*k)).collect();
         if !missing.is_empty() {
             return Err(anyhow!(
-                "{} is missing keys: {} - config and code are out of sync. Add them from {}.example; refusing to guess defaults",
+                "{} is missing keys: {} - config and code are out of sync; see wstunnel.conf.example (dist/ in the source, /usr/share/doc/toriid in packages); refusing to guess defaults",
                 path,
-                missing.join(" "),
-                path
+                missing.join(" ")
             ));
         }
         let server = m["WST_SERVER"].clone();
@@ -166,7 +165,7 @@ impl Default for WdConf {
     fn default() -> Self {
         WdConf {
             auto_bootstrap: true,
-            auto_portal: false,
+            auto_portal: true,
             bootstrap_default: "auto".into(),
             reevaluate_on_network_change: true,
             fail_threshold: 2,

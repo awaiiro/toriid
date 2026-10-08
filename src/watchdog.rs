@@ -77,15 +77,7 @@ impl Watchdog {
         let mut local_ok = false;
         if let Some(m) = mode.filter(|m| m.is_tunnel()) {
             // Judge what is actually running, not what the intent names: in auto mode any rung may be up.
-            let actual = if ctx.wst.running() {
-                Some(Tunnel::Wstunnel)
-            } else if ctx.nl.link_exists(WG_IF).await {
-                Some(Tunnel::WireGuard)
-            } else if ctx.nl.link_exists(&ovpn_if()).await {
-                Some(Tunnel::OpenVpn)
-            } else {
-                None
-            };
+            let actual = modes::actual_tunnel(ctx).await;
             match (m, actual) {
                 (_, None) => return Verdict::Down(format!("{} mode but no tunnel is up", m)),
                 (Mode::Only(want), Some(a)) if want != a => return Verdict::Down(format!("{} wanted but {} is up", want.as_str(), a.as_str())),
@@ -145,8 +137,10 @@ impl Watchdog {
         // wg0 behind. Budget for the worst path now:
         //   wstunnel: 40 + 3*(40+5)      normal: 10 + 20 (ovpn start) + 20 + the wstunnel chain above
         let budget = Duration::from_secs(match m {
-            Mode::Only(Tunnel::Wstunnel) => 200,
-            Mode::Auto => 260,
+            // wstunnel worst case: 40s carrier wait + 3 variants x (8 + 12 + 40)s = 220s
+            Mode::Only(Tunnel::Wstunnel) => 240,
+            // wireguard 10 + openvpn 20 + 20 + the wstunnel chain above
+            Mode::Auto => 300,
             _ => 90,
         });
         match tokio::time::timeout(budget, modes::apply(ctx, m)).await {
@@ -190,7 +184,7 @@ impl Watchdog {
                     journal::notice("toriid-portal", &format!("  {}", l));
                 }
                 let next = policy::portal_next(&rep.outcome);
-                if let Some(ssid) = crate::wifi::ssid().await {
+                if let Some(ssid) = crate::netclass::network_id().await {
                     let how = match (&next, &rep.outcome) {
                         (PortalNext::Passed, AlreadyOpen) => None, // no portal, nothing to record
                         (PortalNext::Passed, _) => Some(if rep.method.is_empty() { "passed automatically" } else { rep.method.as_str() }),
@@ -323,8 +317,10 @@ impl Watchdog {
 
         // -- re-select the tunnel on network change --
         if !bootstrap {
-            let profile = o.ssid.as_deref().and_then(state::profile_get);
-            if let Some(want) = policy::reevaluate_target(o, &self.cfg, self.mem.last_ssid.as_deref(), profile, cur) {
+            let remembered = o.ssid.as_deref().and_then(state::remembered_rung);
+            let actual = modes::actual_tunnel(ctx).await;
+            let top = modes::ladder().first().copied();
+            if let Some(want) = policy::reevaluate_target(o, &self.cfg, self.mem.last_ssid.as_deref(), remembered.or(top), cur, actual) {
                 if now.saturating_sub(self.mem.last_action) >= self.cfg.cooldown {
                     log(&format!("network changed ({} -> {}), re-selecting tunnel: {} -> {}", self.mem.last_ssid.as_deref().unwrap_or("?"), o.ssid.as_deref().unwrap_or("?"), o.intent.as_str(), want));
                     self.mem.last_ssid = o.ssid.clone();
@@ -362,10 +358,11 @@ impl Watchdog {
             if now.saturating_sub(self.mem.last_action) < self.cfg.cooldown {
                 return (true, "skip:bootstrap cooling down".into());
             }
-            if o.conn != Conn::Full {
-                if self.cfg.auto_portal && o.at_home {
-                    // no portals at home, build the tunnel directly
-                } else if self.cfg.auto_portal {
+            // With the kill switch loaded and no tunnel, the host's own probe can never succeed, so
+            // "not full" here does not mean "portal". Without auto_portal, just try the tunnel; if a portal
+            // is in the way, switch_failed_maybe_portal notices and tells the user.
+            if o.conn != Conn::Full && self.cfg.auto_portal && !o.at_home {
+                {
                     log(&format!("unprotected + connectivity {}, passing captive portal first", o.conn.as_str()));
                     if !self.portal_auto(ctx).await {
                         self.note_action(now);
@@ -376,8 +373,6 @@ impl Watchdog {
                         return (false, "bootstrap: portal not passed".into());
                     }
                     log("portal-auto succeeded");
-                } else {
-                    return (false, "bootstrap: waiting for portal (AUTO_PORTAL=no)".into());
                 }
             }
             self.note_action(now);
@@ -420,8 +415,10 @@ impl Watchdog {
                 self.mem.fails = 0;
                 self.mem.gave_up = false;
                 util::rm(GAVE_UP);
-                if let (Some(s), Some(m)) = (&o.ssid, cur) {
-                    state::profile_put(s, m);
+                if let Some(s) = &o.ssid {
+                    if let Some(t) = modes::actual_tunnel(ctx).await {
+                        state::remember_rung(s, t);
+                    }
                 }
                 // once a day, try to upgrade from the disguised variant back to a cert-verifying one
                 let pinned = o.ssid.as_deref().map(|s| WstConf::load().map(|c| c.pins.iter().any(|(n, _)| n == s)).unwrap_or(false)).unwrap_or(false);
@@ -487,21 +484,11 @@ impl Watchdog {
             log("portal passed, machine is in portal mode - rebuilding the tunnel directly");
         }
 
-        // -- action ladder --
-        let known = o.ssid.as_deref().map(|s| state::preferred_mode(Some(s), &self.cfg));
-        if let Some(k) = known {
-            if Some(k) != orig {
-                log(&format!("{} last worked with {} (current {}) - trying it first", o.ssid.as_deref().unwrap_or("?"), k, o.intent.as_str()));
-            }
-        }
-        let rungs = modes::ladder();
-        let ladder = policy::ladder(orig, known, &rungs);
+        // -- action ladder: the pinned rung (if the user pinned one), then auto (which climbs the whole
+        //    ladder itself, starting where this network worked last time) --
+        let ladder = policy::ladder(orig);
         for m in &ladder {
             if let Some(ip) = self.try_mode(ctx, o, *m).await {
-                // The top rung stands in for auto: if the user was on auto, stay on auto.
-                if orig == Some(Mode::Auto) && Some(*m) == rungs.first().map(|t| Mode::Only(*t)) {
-                    state::write_intent(Intent::Mode(Mode::Auto));
-                }
                 return (true, format!("recovered:{}:{}", m, ip));
             }
             if self.handoff {

@@ -77,7 +77,7 @@ pub struct Advice {
 pub struct Status {
     pub version: u32,
     pub state: State,
-    /// What the user asked for: normal / tcp / wstunnel / portal / off / failed-closed / unknown
+    /// What the user asked for: auto / wireguard / openvpn / wstunnel / portal / off / failed-closed / unknown
     pub mode: String,
     /// wireguard / openvpn / wstunnel, or empty when no tunnel is up
     pub tunnel: String,

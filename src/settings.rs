@@ -61,7 +61,7 @@ pub struct Watchdog {
 }
 impl Default for Watchdog {
     fn default() -> Self {
-        Watchdog { auto_bootstrap: true, auto_portal: false, default_mode: "auto".into(), reevaluate_on_network_change: true, unknown_max: 3 }
+        Watchdog { auto_bootstrap: true, auto_portal: true, default_mode: "auto".into(), reevaluate_on_network_change: true, unknown_max: 3 }
     }
 }
 
@@ -209,6 +209,12 @@ pub fn check() -> Result<Settings> {
         if crate::state::Tunnel::parse(t).is_none() {
             anyhow::bail!("[tunnels] ladder: unknown tunnel \"{}\" (known: wireguard, openvpn, wstunnel)", t);
         }
+    }
+    if crate::state::Mode::parse(&s.watchdog.default_mode).map(|m| !m.is_tunnel()).unwrap_or(true) {
+        anyhow::bail!("[watchdog] default_mode = \"{}\": must be auto, wireguard, openvpn or wstunnel", s.watchdog.default_mode);
+    }
+    if !["auto", "iwd", "networkmanager", "nm"].contains(&s.wifi.backend.as_str()) {
+        anyhow::bail!("[wifi] backend = \"{}\": must be auto, iwd or networkmanager", s.wifi.backend);
     }
     for (net, m) in &s.networks.pin {
         if crate::state::Mode::parse(m).map(|m| !m.is_tunnel()).unwrap_or(true) {

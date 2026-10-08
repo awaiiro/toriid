@@ -17,7 +17,6 @@ pub const CARRIER_WAIT: &str = "/run/toriid/carrier-wait"; // waiting|unreachabl
 pub const FWD_SAVED: &str = "/run/toriid/forwarding-was";
 pub const NET_CLASS: &str = "/run/toriid/class"; // trusted|hostile
 pub const WST_ACTIVE: &str = "/run/toriid/wst-carrier";
-pub const WST_ENVFILE: &str = "/run/toriid/wstunnel.env"; // secret for the wstunnel child, passed via EnvironmentFile-style env
 pub const WST_LOG: &str = "/run/toriid/wstunnel.log";
 
 pub const MODE_PROFILE: &str = "/var/lib/toriid/mode-profile"; // SSID\tmode\tts

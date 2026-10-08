@@ -10,13 +10,13 @@ use std::net::Ipv4Addr;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Class {
-    Home,
+    Trusted,
     Hostile,
 }
 impl Class {
     pub fn as_str(self) -> &'static str {
         match self {
-            Class::Home => "home",
+            Class::Trusted => "trusted",
             Class::Hostile => "hostile",
         }
     }
@@ -27,7 +27,7 @@ impl Class {
 /// everyone there. This is the only misclassification in the design that fails open.
 pub fn classify(ssid: Option<&str>) -> Class {
     match ssid {
-        Some(s) if config::home_ssids().iter().any(|h| h == s) => Class::Home,
+        Some(s) if config::home_ssids().iter().any(|h| h == s) => Class::Trusted,
         _ => Class::Hostile,
     }
 }
@@ -50,7 +50,7 @@ pub async fn apply_lan(nl: &Nl, class: Class, phy_index: Option<u32>) -> Vec<Str
         return logs;
     }
     nft::lan_clear();
-    if class != Class::Home {
+    if class != Class::Trusted {
         return logs;
     }
     let Some(idx) = phy_index else { return logs };
@@ -73,4 +73,21 @@ mod tests {
         assert_eq!(network_of("192.0.2.37".parse().unwrap(), 24), "192.0.2.0/24");
         assert_eq!(network_of("203.0.113.9".parse().unwrap(), 22), "203.0.112.0/22");
     }
+}
+
+/// Identity of the network we are actually on: the SSID when the uplink is the Wi-Fi interface,
+/// `eth:<ifname>` for any other uplink. Everything that keys per-network state (trust, memory, pins)
+/// goes through here, so a trusted Wi-Fi can never vouch for a wired uplink on a dock.
+pub async fn network_id_for(phy: Option<&crate::nl::Link>) -> Option<String> {
+    let p = phy?;
+    match crate::wifi::state().await {
+        Some(w) if w.dev == p.name => w.ssid,
+        _ => Some(format!("eth:{}", p.name)),
+    }
+}
+
+pub async fn network_id() -> Option<String> {
+    let nl = crate::nl::Nl::new().ok()?;
+    let phy = nl.phy_dev().await.ok().flatten();
+    network_id_for(phy.as_ref()).await
 }

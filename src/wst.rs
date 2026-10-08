@@ -102,6 +102,12 @@ fn client_args(conf: &WstConf, variant: Variant, local_port: u16, server: &str) 
             }
         }
     }
+    // The carrier's web server routes by Host. Without it the request carries the bare IP and lands on no
+    // site (an empty 200 instead of the websocket upgrade). Inside TLS, so on-path observers don't see it.
+    if !conf.sni_named.is_empty() {
+        a.push("-H".into());
+        a.push(format!("Host: {}", conf.sni_named));
+    }
     a.push(format!("wss://{}:{}", server, conf.port));
     a
 }
@@ -611,7 +617,6 @@ pub async fn teardown(ctx: &mut Ctx) {
     carrier_route_off(ctx).await;
     state::carrier_flag_clear();
     util::rm(WST_ACTIVE); // must come after route removal, which reads it
-    util::rm(WST_ENVFILE);
 }
 
 // ── side probe (spare port, never touches the live tunnel) ──────────────────────

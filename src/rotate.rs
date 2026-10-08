@@ -18,7 +18,7 @@
 //! An interruption at any step leaves at least one common key; the next run reconciles half-done state first.
 //! Keys travel only over ssh stdin, never argv / env (the old `sudo NEW_SECRET=...` got logged by sudo
 //! into the server journal).
-use crate::config::{parse_kv, WstConf};
+use crate::config::parse_kv;
 use crate::paths::*;
 use anyhow::{anyhow, Context, Result};
 use std::collections::BTreeMap;
@@ -31,8 +31,35 @@ const RETIRE_GRACE: u64 = 86400;
 const ROTATE_EVERY: u64 = 7 * 86400;
 
 // ── ssh ─────────────────────────────────────────────────────────
+/// Keys of wstunnel.conf that key management needs besides the secrets. The file is root-only; the
+/// operator gets these from the daemon.
+const MGMT_KEYS: &[&str] = &["WST_SSH", "WST_SSH_KEY", "WST_SERVER", "WST_KNOWN_NETS"];
+
+fn conf_kv() -> std::collections::HashMap<String, String> {
+    static C: std::sync::OnceLock<std::collections::HashMap<String, String>> = std::sync::OnceLock::new();
+    C.get_or_init(|| {
+        if crate::util::euid_is_root() {
+            return std::fs::read_to_string(wst_conf()).ok().map(|t| parse_kv(&t)).unwrap_or_default();
+        }
+        daemon_secrets().ok().and_then(|v| v.get("conf").cloned()).and_then(|c| serde_json::from_value(c).ok()).unwrap_or_default()
+    })
+    .clone()
+}
+
+/// Non-secret management settings, for the daemon to hand to the operator.
+pub fn mgmt_conf_direct() -> std::collections::HashMap<String, String> {
+    let m = std::fs::read_to_string(wst_conf()).ok().map(|t| parse_kv(&t)).unwrap_or_default();
+    m.into_iter().filter(|(k, _)| MGMT_KEYS.contains(&k.as_str())).collect()
+}
+
+fn daemon_secrets() -> Result<serde_json::Value> {
+    let (rc, lines) = crate::client::capture(crate::daemon::Request { cmd: "wst-secret-get".into(), args: vec![], automated: false })?;
+    let line = lines.iter().rev().find(|l| l.starts_with('{')).ok_or_else(|| anyhow!("daemon refused (rc {}): {}", rc, lines.join(" ")))?;
+    Ok(serde_json::from_str(line)?)
+}
+
 fn ssh_target() -> Result<(String, String)> {
-    let m = std::fs::read_to_string(&wst_conf()).ok().map(|t| parse_kv(&t)).unwrap_or_default();
+    let m = conf_kv();
     match (m.get("WST_SSH").filter(|v| !v.is_empty()), m.get("WST_SSH_KEY").filter(|v| !v.is_empty())) {
         (Some(t), Some(k)) => Ok((t.clone(), k.clone())),
         _ => Err(anyhow!("key management needs WST_SSH (user@host) and WST_SSH_KEY in {}", wst_conf())),
@@ -48,7 +75,7 @@ fn ssh(cmd: &str, stdin: Option<&str>) -> Result<String> {
     let (target, key) = ssh_target()?;
     let host = target.rsplit('@').next().unwrap_or(&target).to_string();
     let user = target.split_once('@').map(|(u, _)| u.to_string());
-    let public = WstConf::load().ok().map(|c| c.server).filter(|s| !s.is_empty() && *s != host);
+    let public = conf_kv().get("WST_SERVER").cloned().filter(|s| !s.is_empty() && *s != host);
     let mut routes: Vec<(String, Vec<String>)> = vec![(target.clone(), vec![])];
     if let Some(p) = public {
         let t = match &user { Some(u) => format!("{}@{}", u, p), None => p };
@@ -159,7 +186,18 @@ pub fn local_read_direct() -> Result<Local> {
 }
 
 /// Atomically rewrite the three secret lines in wstunnel.conf (rest untouched); None = drop that line
+/// Keys use the `new_secret` alphabet only. Checked before anything is written: a newline in a key would
+/// inject extra lines (WST_SERVERS, WST_UPSTREAM...) into a file root trusts.
+pub fn valid_secret(s: &str) -> bool {
+    (16..=128).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
 pub fn local_write_direct(l: &Local) -> Result<()> {
+    for k in std::iter::once(&l.cur).chain(l.prev.iter()).chain(l.next.iter()) {
+        if !valid_secret(k) {
+            return Err(anyhow!("refusing a key with characters outside [A-Za-z0-9_-] or a length outside 16..128"));
+        }
+    }
     let text = std::fs::read_to_string(&wst_conf())?;
     let mut out: Vec<String> = text.lines().filter(|x| !x.starts_with("WST_SECRET=") && !x.starts_with("WST_SECRET_PREV=") && !x.starts_with("WST_SECRET_NEXT=")).map(String::from).collect();
     out.push(format!("WST_SECRET={}", l.cur));
@@ -177,9 +215,7 @@ fn local_read() -> Result<Local> {
     if crate::util::euid_is_root() {
         return local_read_direct();
     }
-    let (rc, lines) = crate::client::capture(crate::daemon::Request { cmd: "wst-secret-get".into(), args: vec![], automated: false })?;
-    let line = lines.iter().rev().find(|l| l.starts_with('{')).ok_or_else(|| anyhow!("daemon refused to return the keys (rc {}): {}", rc, lines.join(" ")))?;
-    let v: serde_json::Value = serde_json::from_str(line)?;
+    let v = daemon_secrets()?;
     let s = |k: &str| v.get(k).and_then(|x| x.as_str()).map(String::from);
     Ok(Local { cur: s("cur").ok_or_else(|| anyhow!("no current key"))?, prev: s("prev"), next: s("next") })
 }
@@ -253,8 +289,10 @@ pub fn rotation_due(rotated_ago: Option<u64>) -> bool {
     rotated_ago.map(|a| a >= ROTATE_EVERY).unwrap_or(true)
 }
 
+/// Is wstunnel what actually carries traffic right now (in auto mode too)? From the daemon's health file,
+/// which any user can read.
 fn in_wstunnel() -> bool {
-    matches!(crate::state::Intent::read(), crate::state::Intent::Mode(crate::state::Mode::Only(crate::state::Tunnel::Wstunnel)))
+    crate::state::read_health().map(|h| h.tunnel == "wstunnel").unwrap_or(false)
 }
 
 // ── actions ────────────────────────────────────────────────────────
@@ -451,11 +489,11 @@ fn utc_epoch(ts: &str) -> Option<u64> {
 // ── audit ──────────────────────────────────────────────────────────
 /// Audit: group the server's wstunnel log by source IP. Returns (table text, foreign sources [(IP, last-seen epoch)]).
 pub fn audit(days: u32) -> Result<(String, Vec<(String, u64)>)> {
-    let m = std::fs::read_to_string(&wst_conf()).ok().map(|t| parse_kv(&t)).unwrap_or_default();
+    let m = conf_kv();
     let known: Vec<String> = m.get("WST_KNOWN_NETS").map(|s| s.split_whitespace().map(String::from).collect()).unwrap_or_default();
     // Read-only journal query, leaves nothing new on the server.
     // One "timestamp ip" line per X-Forwarded-For entry; aggregation (count / first / last) happens locally
-    let cmd = format!("journalctl -u wstunnel-server --since -{}d --no-pager -o short-iso --utc 2>/dev/null | sed 's/\\x1b\\[[0-9;]*m//g' | grep 'Request X-Forwarded-For' | awk '{{print $1, $NF}}'", days);
+    let cmd = format!("sudo journalctl -u wstunnel-server --since -{}d --no-pager -o short-iso --utc 2>/dev/null | sed 's/\\x1b\\[[0-9;]*m//g' | grep 'Request X-Forwarded-For' | awk '{{print $1, $NF}}'", days);
     let out = ssh(&cmd, None)?;
     let mut per_ip: BTreeMap<String, (u64, String, String)> = BTreeMap::new();
     for l in out.lines() {
@@ -508,6 +546,14 @@ fn in_net(ip: &str, net: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn secrets_cannot_inject_lines() {
+        assert!(valid_secret(&new_secret()));
+        assert!(!valid_secret("abcdefghijklmnop\nWST_SERVERS=192.0.2.1"));
+        assert!(!valid_secret("short"));
+        let bad = Local { cur: "abcdefghijklmnop\nWST_PORT=22".into(), prev: None, next: None };
+        assert!(local_write_direct(&bad).is_err());
+    }
     fn srv(keys: &[&str]) -> Server {
         Server { new_layout: true, fps: keys.iter().map(|k| fp(k)).collect() }
     }

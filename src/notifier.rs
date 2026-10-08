@@ -1,4 +1,4 @@
-//! User-side notifier. Only reads /run/net-health.json; never touches the network and makes no decisions.
+//! User-side notifier. Only reads /run/toriid/health.json; never touches the network and makes no decisions.
 //! All decisions live in the daemon (it has the live state). This just pops up the advice and
 //! shouts if the watchdog dies.
 use crate::dbus::notify;
@@ -83,7 +83,7 @@ pub async fn run() -> anyhow::Result<()> {
                                     let _ = notify::send(&conn, &format!("Browser policy failed: {:#}", e), true).await;
                                 }
                             }
-                        } else if p.enabled && h.class == "home" && was_hostile {
+                        } else if p.enabled && h.class == "trusted" && was_hostile {
                             let _ = notify::send(&conn, "Back on the home network. The clean Firefox is still open (left as is); your main profile is safe to open now", false).await;
                         }
                     }

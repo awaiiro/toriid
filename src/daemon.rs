@@ -58,11 +58,7 @@ async fn observe(nl: &Nl, conn: Conn, resumed: bool) -> Obs {
         Some(p) => nl.has_ipv4(p.index).await,
         None => false,
     };
-    let ssid = match &phy {
-        Some(p) if p.name.starts_with("wl") => crate::wifi::ssid().await,
-        Some(p) => Some(format!("eth:{}", p.name)),
-        None => None,
-    };
+    let ssid = crate::netclass::network_id_for(phy.as_ref()).await;
     Obs {
         now: util::now(),
         intent,
@@ -72,7 +68,7 @@ async fn observe(nl: &Nl, conn: Conn, resumed: bool) -> Obs {
         portal_handoff: util::exists(PORTAL_HANDOFF),
         phy: phy.as_ref().map(|p| p.name.clone()),
         phy_has_ip,
-        at_home: netclass::classify(ssid.as_deref()) == netclass::Class::Home,
+        at_home: netclass::classify(ssid.as_deref()) == netclass::Class::Trusted,
         ssid,
         conn,
         carrier_flag: state::carrier_flag_read(180),
@@ -203,7 +199,7 @@ pub async fn run() -> Result<()> {
                 };
                 last_conn = conn;
                 // Network classification: refill lan_allow when the SSID changes, auto-protect at home
-                let ssid = match &phy { Some(p) if p.name.starts_with("wl") => crate::wifi::ssid().await, Some(p) => Some(format!("eth:{}", p.name)), None => None };
+                let ssid = crate::netclass::network_id_for(phy.as_ref()).await;
                 let class = netclass::classify(ssid.as_deref());
                 let class_key = Some(class).filter(|_| phy.is_some());
                 if class_key != last_class {
@@ -212,7 +208,7 @@ pub async fn run() -> Result<()> {
                         netclass::write_class(class);
                         journal::notice("toriid-netclass", &format!("class={} iface={} ssid={}", class.as_str(), phy_name.as_deref().unwrap_or("?"), ssid.as_deref().unwrap_or("")));
                         for l in netclass::apply_lan(&nl, class, phy.as_ref().map(|p| p.index)).await { journal::notice("toriid-netclass", &l); }
-                        if class == netclass::Class::Home && !util::exists(MANUAL_OFF) && !matches!(Intent::read(), Intent::Mode(m) if m.is_tunnel()) {
+                        if class == netclass::Class::Trusted && !util::exists(MANUAL_OFF) && !matches!(Intent::read(), Intent::Mode(m) if m.is_tunnel()) {
                             journal::notice("toriid-netclass", "trusted network, bringing protection up automatically");
                             let _ = run_action(&mut ctx, &mut wd, &shared, "auto-protect", |c| Box::pin(modes::apply(c, Mode::Auto))).await;
                         }
@@ -362,23 +358,11 @@ async fn write_health_now(wd: &mut Watchdog, ctx: &Ctx, shared: &Shared, conn: C
         gave_up: wd.mem.gave_up,
         class: util::read_trim(NET_CLASS).unwrap_or_default(),
         daemon_pid: std::process::id(),
-        tunnel: active_tunnel(ctx).await.into(),
+        tunnel: modes::actual_tunnel(ctx).await.map(|t| t.as_str()).unwrap_or("").into(),
         variant: if ctx.wst.running() { ctx.wst.variant.map(|v| v.as_str().to_string()).unwrap_or_default() } else { String::new() },
         exit_ip: exit_ip_of(&reason_for_ip).unwrap_or(prev.exit_ip),
     };
     state::write_health(&h);
-}
-
-async fn active_tunnel(ctx: &Ctx) -> &'static str {
-    if ctx.wst.running() {
-        "wstunnel"
-    } else if ctx.nl.link_exists(WG_IF).await {
-        "wireguard"
-    } else if ctx.nl.link_exists(&ovpn_if()).await {
-        "openvpn"
-    } else {
-        ""
-    }
 }
 
 /// The watchdog verdict carries the measured exit as `ok:<ip>` (or `...:...:<ip>(...)`).
@@ -388,7 +372,7 @@ fn exit_ip_of(reason: &str) -> Option<String> {
     ip.parse::<std::net::IpAddr>().ok().map(|_| ip.to_string())
 }
 
-/// The operator of this machine: [daemon] operator (username) in config.toml; defaults to the owner of wstunnel.conf
+/// The operator of this machine: [daemon] operator (username) in config.toml. Unset = only root.
 fn operator_uid() -> Option<u32> {
     let s = crate::settings::get();
     if !s.daemon.operator.is_empty() {
@@ -422,7 +406,15 @@ macro_rules! deny {
     }};
 }
 
+/// Per-request state (where progress goes, whether this counts as automated) must not outlive the request,
+/// whichever way it ends - early denials return from inside handle_job_inner.
 async fn handle_job(ctx: &mut Ctx, wd: &mut Watchdog, shared: &Shared, job: Job) {
+    handle_job_inner(ctx, wd, shared, job).await;
+    ctx.io = Io::default();
+    ctx.automated = false;
+}
+
+async fn handle_job_inner(ctx: &mut Ctx, wd: &mut Watchdog, shared: &Shared, job: Job) {
     let Job { req, uid, out, done } = job;
     let root = uid == 0;
     let caller = who(uid);
@@ -435,8 +427,8 @@ async fn handle_job(ctx: &mut Ctx, wd: &mut Watchdog, shared: &Shared, job: Job)
                 deny!(out, done, why);
             }
             let at_home = {
-                let ssid = crate::wifi::ssid().await;
-                netclass::classify(ssid.as_deref()) == netclass::Class::Home
+                let ssid = crate::netclass::network_id().await;
+                netclass::classify(ssid.as_deref()) == netclass::Class::Trusted
             };
             let auto_portal = WdConf::load().auto_portal && !at_home && m.is_tunnel();
             match run_action(ctx, wd, shared, &format!("torii {}", m), |c| Box::pin(async move {
@@ -524,7 +516,7 @@ async fn handle_job(ctx: &mut Ctx, wd: &mut Watchdog, shared: &Shared, job: Job)
                     if passed {
                         // A manual portal-auto means "pass the portal, then be online": restore protection per this
                         // network's history (dry-run too - don't leave the user in portal mode)
-                        let ssid = crate::wifi::ssid().await;
+                        let ssid = crate::netclass::network_id().await;
                         let want = state::preferred_mode(ssid.as_deref(), &WdConf::load());
                         c.io.say(format!("  restoring protection -> {}", want));
                         return modes::apply(c, want).await;
@@ -537,7 +529,9 @@ async fn handle_job(ctx: &mut Ctx, wd: &mut Watchdog, shared: &Shared, job: Job)
                         StillBlocked(x) if x == "dry-run" => {
                             c.io.warn("dry-run: form parsed, not submitted. Staying in portal mode (kill switch on)");
                             c.io.hint("submit for real: torii portal-auto    by hand: torii portal    give up: torii up");
-                            c.automated = true; // the watchdog takes over after 4 minutes, not the 15 of a manual portal
+                            // the watchdog takes over after 4 minutes, not the 15 of a manual portal
+                            c.automated = true;
+                            util::rm(MANUAL_PORTAL);
                             Ok(())
                         }
                         StillBlocked(x) => { c.io.fail(format!("still blocked after submit ({}). Staying in portal mode", x)); c.io.hint("Accept the terms manually: torii portal (protection is restored afterwards)"); Err(anyhow!("blocked")) }
@@ -576,7 +570,7 @@ async fn handle_job(ctx: &mut Ctx, wd: &mut Watchdog, shared: &Shared, job: Job)
                 let _ = out.send("needs root".into());
                 1
             } else {
-                let ssid = crate::wifi::ssid().await.unwrap_or_default();
+                let ssid = crate::netclass::network_id().await.unwrap_or_default();
                 match crate::watchdog::wst_probe_cli(&ssid).await {
                     Ok(s) => {
                         let _ = out.send(s);
@@ -606,20 +600,21 @@ async fn handle_job(ctx: &mut Ctx, wd: &mut Watchdog, shared: &Shared, job: Job)
             0
         }
         "wst-reload" => {
-            // Restart the client after a key change. Root or the owner of wstunnel.conf - whoever can edit
-            // the config may ask to reconnect with it
+            // Restart the client after a key change (root or the operator).
             if let Err(why) = policy::may(caller, "wst-reload", None, last_conn()) {
                 deny!(out, done, why);
             }
-            if !matches!(Intent::read(), Intent::Mode(Mode::Only(crate::state::Tunnel::Wstunnel))) {
+            let intent = Intent::read().mode().filter(|m| m.is_tunnel());
+            if modes::actual_tunnel(ctx).await != Some(crate::state::Tunnel::Wstunnel) || intent.is_none() {
                 let _ = out.send(format!("{}h not in wstunnel mode; the new key takes effect on the next connection", crate::ui::P_STYLE));
                 0
             } else {
                 let _ = out.send(format!("{}h reconnecting wstunnel with the new key...", crate::ui::P_STYLE));
+                let m = intent.unwrap_or(Mode::Auto);
                 match run_action(ctx, wd, shared, "wst-reload", |c| Box::pin(async move {
                     tokio::time::sleep(Duration::from_secs(3)).await; // wait for the server side's delayed restart
                     c.automated = true;
-                    modes::apply(c, Mode::Only(crate::state::Tunnel::Wstunnel)).await
+                    modes::apply(c, m).await
                 })).await {
                     Ok(()) => 0,
                     Err(_) => 1,
@@ -634,7 +629,7 @@ async fn handle_job(ctx: &mut Ctx, wd: &mut Watchdog, shared: &Shared, job: Job)
             }
             let r = if req.cmd == "wst-secret-get" {
                 crate::rotate::local_read_direct().map(|l| {
-                    let _ = out.send(serde_json::json!({ "cur": l.cur, "prev": l.prev, "next": l.next }).to_string());
+                    let _ = out.send(serde_json::json!({ "cur": l.cur, "prev": l.prev, "next": l.next, "conf": crate::rotate::mgmt_conf_direct() }).to_string());
                 })
             } else {
                 let opt = |i: usize| req.args.get(i).cloned().filter(|s| !s.is_empty());

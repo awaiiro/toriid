@@ -1,4 +1,4 @@
-// Quickshell singleton-style component: exposes the latest toriid status as `status`.
+// Quickshell component (an Item): exposes the latest toriid status as `status`.
 // Works the same in any Quickshell-based shell (DankMaterialShell plugins, custom bars).
 import QtQuick
 import Quickshell

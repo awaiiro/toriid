@@ -134,7 +134,7 @@ async fn main() {
         // ── commands that used to be separate scripts (old names still work) ──
         "up" => match rest.first().map(String::as_str) {
             None => {
-                let ssid = crate::wifi::ssid().await;
+                let ssid = crate::netclass::network_id().await;
                 let m = state::preferred_mode(ssid.as_deref(), &config::WdConf::load());
                 mode(m, automated).await
             }
@@ -162,7 +162,7 @@ async fn main() {
             Some("status") | None => { print!("{}", browser::status_text()); 0 }
             Some("clean") => {
                 let p = browser::policy();
-                let ssid = crate::wifi::ssid().await.unwrap_or_else(|| "manual".into());
+                let ssid = crate::netclass::network_id().await.unwrap_or_else(|| "manual".into());
                 match browser::on_hostile(&p, &ssid).await {
                     Ok(m) => { ui::render(&format!("{}ok {}", ui::P_STYLE, m), ui::is_tty()); 0 }
                     Err(e) => { ui::render(&format!("{}fail {:#}", ui::P_STYLE, e), ui::is_tty()); 1 }
@@ -215,7 +215,7 @@ async fn main() {
         "wst-probe" => via_daemon("wst-probe").await,
         "wst-log" => via_daemon("wst-log").await,
         "failed-closed" => {
-            eprintln!("failed-closed is a state, not a mode: all three paths failed. Retry with torii up, or go unprotected with torii down");
+            eprintln!("failed-closed is a state, not a mode: every tunnel failed. Retry with torii up, or go unprotected with torii down");
             2
         }
         m => match Mode::parse(m) {
@@ -237,10 +237,6 @@ fn report(r: anyhow::Result<()>, what: &str) -> i32 {
 }
 
 async fn mode(m: Mode, automated: bool) -> i32 {
-    // NETD_MANAGED=1: when portal-auto is launched by the daemon, entering/leaving portal mode is the daemon's job; do nothing here
-    if std::env::var("NETD_MANAGED").is_ok() {
-        return 0;
-    }
     if client::daemon_alive().await {
         return client::send(daemon::Request { cmd: "mode".into(), args: vec![m.as_str().into()], automated }).await.unwrap_or(1);
     }

@@ -9,6 +9,9 @@
 #                                no tunnel drop
 #   wst-keys keep     < keys     keep only the keys given on stdin (one per line, at least one, each
 #                                must already exist)
+#   wst-keys init                fresh install (server/install.sh): render restrict.yaml and the Caddy
+#                                snippet, self-test them
+#   wst-keys selftest            full path through Caddy with the newest key, like a real client
 #   wst-keys selfcheck-or-rollback STAMP   used internally by migrate
 #   wst-keys migrate             one-time: move from "single key hardcoded in the unit + Caddyfile" to
 #                                this scheme. Restarts wstunnel once (after 2s, detached from ssh),
@@ -44,6 +47,9 @@ MAX_KEYS=3
 # Caddy layer, which testing wstunnel alone would miss
 FRONT=wss://127.0.0.1:443
 
+# Caddy routes by Host; install.sh writes the domain. An array, so "Host: name" stays one argument.
+HOSTHDR=$(cat "$D/domain" 2>/dev/null || true)
+HARGS=(); [ -n "$HOSTHDR" ] && HARGS=(-H "Host: $HOSTHDR")
 die() { echo "$*" >&2; exit 1; }
 fp() { printf '%s' "$1" | sha256sum | cut -c1-12; }
 valid() { [[ "$1" =~ ^[A-Za-z0-9_-]{24,}$ ]]; }
@@ -110,7 +116,7 @@ yaml_selftest() {  # $1 = yaml, $2 = a key that must be accepted
 client_try() {  # $1 = key, $2 = ws://... -> accepted | rejection reason
     local log cp
     log=$(mktemp)
-    "$WST" client --http-upgrade-path-prefix "$1" -L "udp://127.0.0.1:18300:$T?timeout_sec=5" "$2" >"$log" 2>&1 &
+    "$WST" client --http-upgrade-path-prefix "$1" "${HARGS[@]}" -L "udp://127.0.0.1:18300:$T?timeout_sec=5" "$2" >"$log" 2>&1 &
     cp=$!
     sleep 1
     printf 'x' > /dev/udp/127.0.0.1/18300 2>/dev/null || true

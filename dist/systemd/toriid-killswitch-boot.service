@@ -13,8 +13,9 @@ ConditionPathExists=/var/lib/toriid/killswitch.nft
 Type=oneshot
 RemainAfterExit=yes
 # Syntax check first: a broken ruleset loaded here means no network at boot.
-ExecStartPre=/usr/bin/nft -c -f /var/lib/toriid/killswitch.nft
-ExecStart=/usr/bin/nft -f /var/lib/toriid/killswitch.nft
+# Plain "nft": systemd finds it in /usr/bin (Arch) or /usr/sbin (Debian/Ubuntu).
+ExecStartPre=nft -c -f /var/lib/toriid/killswitch.nft
+ExecStart=nft -f /var/lib/toriid/killswitch.nft
 
 [Install]
 WantedBy=multi-user.target

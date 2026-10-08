@@ -33,10 +33,6 @@ pub async fn state() -> Option<Wifi> {
     }
 }
 
-pub async fn ssid() -> Option<String> {
-    state().await?.ssid
-}
-
 pub async fn scan_list(rescan: bool) -> Result<Vec<(String, String, i16, bool)>> {
     match backend().await {
         Backend::Iwd => iwd::scan_list(rescan).await,

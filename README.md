@@ -57,9 +57,13 @@ sudo install -m644 dist/systemd/*.service /etc/systemd/system/
 sudo install -Dm644 dist/tmpfiles/toriid.conf /etc/tmpfiles.d/toriid.conf
 sudo systemd-tmpfiles --create toriid.conf
 sudo systemctl enable --now toriid-killswitch-boot toriid
+sudo install -Dm644 -t /etc/systemd/user dist/systemd/user/*
+systemctl --user enable --now toriid-notify          # desktop notifications
 ```
 
-Arch: [`dist/arch/PKGBUILD`](dist/arch/PKGBUILD).
+Needs libnftables (`libnftables-dev` on Debian/Ubuntu to build). Prebuilt x86_64 binary on the
+[releases](https://github.com/awaiiro/toriid/releases) page. Arch: [`dist/arch/PKGBUILD`](dist/arch/PKGBUILD).
+`torii portal` uses Firefox.
 
 Then put your WireGuard config at `/etc/wireguard/wg0.conf`, set `operator` to your username in
 `/etc/toriid/config.toml`, and run `torii up`. All options: [`dist/config.toml`](dist/config.toml).

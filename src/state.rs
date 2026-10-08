@@ -110,11 +110,17 @@ pub fn intent_age() -> Option<u64> {
 }
 
 // ── per-SSID memory (TSV, public format) ─────────────────────
-pub fn profile_get(ssid: &str) -> Option<Mode> {
-    Tsv::get(MODE_PROFILE, ssid).and_then(|(v, _)| Mode::parse(&v))
+/// The rung that last worked on this network. Auto starts climbing there.
+pub fn remembered_rung(ssid: &str) -> Option<Tunnel> {
+    Tsv::get(MODE_PROFILE, ssid).and_then(|(v, _)| Tunnel::parse(&v))
 }
-/// Which mode this network should use: pin (MODE_PIN) > history (mode-profile) > BOOTSTRAP_DEFAULT.
-/// The single place in the project that decides this.
+
+pub fn remember_rung(ssid: &str, t: Tunnel) {
+    let _ = Tsv::put(MODE_PROFILE, ssid, t.as_str());
+}
+
+/// Which mode this network should use: pin ([networks.pin]) > default_mode. The single place that decides.
+/// (What worked last time is not a mode: auto starts from it, see `remembered_rung`.)
 pub fn preferred_mode(ssid: Option<&str>, cfg: &crate::config::WdConf) -> Mode {
     if let Some(s) = ssid {
         if let Some((_, m)) = cfg.mode_pins.iter().find(|(n, _)| n == s) {
@@ -122,15 +128,8 @@ pub fn preferred_mode(ssid: Option<&str>, cfg: &crate::config::WdConf) -> Mode {
                 return m;
             }
         }
-        if let Some(m) = profile_get(s) {
-            return m;
-        }
     }
-    Mode::parse(&cfg.bootstrap_default).unwrap_or(Mode::Auto)
-}
-
-pub fn profile_put(ssid: &str, m: Mode) {
-    let _ = Tsv::put(MODE_PROFILE, ssid, m.as_str());
+    Mode::parse(&cfg.bootstrap_default).filter(|m| m.is_tunnel()).unwrap_or(Mode::Auto)
 }
 
 /// How this network's captive portal was passed last time ("form auto-submitted", "Meraki auto-accept",

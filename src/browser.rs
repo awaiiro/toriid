@@ -226,6 +226,6 @@ mod tests {
         assert_eq!(exposure_class("hostile", "wstunnel", "degraded"), "hostile", "no connectivity but kill switch loaded: not leaking");
         assert_eq!(exposure_class("hostile", "off", "off"), HOSTILE_BARE);
         assert_eq!(exposure_class("hostile", "auto", "leaking"), HOSTILE_BARE);
-        assert_eq!(exposure_class("home", "off", "off"), "home", "unprotected at home: ignored");
+        assert_eq!(exposure_class("trusted", "off", "off"), "trusted", "unprotected on a trusted network: ignored");
     }
 }

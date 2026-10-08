@@ -263,21 +263,21 @@ mod tests {
     use super::*;
     #[test]
     fn parse_typical_provider_config() {
-        let t = "[Interface]\nPrivateKey = abc=\nAddress = 10.64.0.2/32\nDNS = 10.64.0.1\n\n[Peer]\nPublicKey = def=\nAllowedIPs = 0.0.0.0/0\nEndpoint = 203.0.113.10:51820\n";
+        let t = "[Interface]\nPrivateKey = abc=\nAddress = 10.77.0.2/32\nDNS = 10.77.0.1\n\n[Peer]\nPublicKey = def=\nAllowedIPs = 0.0.0.0/0\nEndpoint = 203.0.113.10:51820\n";
         let c = WgConf::parse(t).unwrap();
-        assert_eq!(c.addresses, vec![("10.64.0.2".parse().unwrap(), 32)]);
+        assert_eq!(c.addresses, vec![("10.77.0.2".parse().unwrap(), 32)]);
         assert_eq!(c.dns.len(), 1);
         assert_eq!(c.endpoint, "203.0.113.10:51820");
         assert!(!c.has_v6());
     }
     #[test]
     fn postup_resolvectl_is_understood() {
-        let t = "[Interface]\nPrivateKey = a\nAddress = 10.64.0.2/32\nPostUp = resolvectl dns %i 10.64.0.1\nPostUp = resolvectl domain %i '~.'\nPostDown = resolvectl revert %i\n[Peer]\nPublicKey = b\nAllowedIPs = 0.0.0.0/0\nEndpoint = 192.0.2.1:51820\n";
+        let t = "[Interface]\nPrivateKey = a\nAddress = 10.77.0.2/32\nPostUp = resolvectl dns %i 10.77.0.1\nPostUp = resolvectl domain %i '~.'\nPostDown = resolvectl revert %i\n[Peer]\nPublicKey = b\nAllowedIPs = 0.0.0.0/0\nEndpoint = 192.0.2.1:51820\n";
         let c = WgConf::parse(t).unwrap();
-        assert_eq!(c.dns, vec!["10.64.0.1".parse::<IpAddr>().unwrap()]);
+        assert_eq!(c.dns, vec!["10.77.0.1".parse::<IpAddr>().unwrap()]);
         assert_eq!(c.dns_domains, vec!["~."]);
         assert!(c.ignored_hooks.is_empty());
-        let t2 = "[Interface]\nPrivateKey = a\nAddress = 10.64.0.2/32\nDNS = 10.64.0.1\nPostUp = iptables -A FOO\n[Peer]\nPublicKey = b\nEndpoint = 192.0.2.1:51820\n";
+        let t2 = "[Interface]\nPrivateKey = a\nAddress = 10.77.0.2/32\nDNS = 10.77.0.1\nPostUp = iptables -A FOO\n[Peer]\nPublicKey = b\nEndpoint = 192.0.2.1:51820\n";
         let c2 = WgConf::parse(t2).unwrap();
         assert_eq!(c2.dns_domains, vec!["~."]);
         assert_eq!(c2.ignored_hooks, vec!["iptables -A FOO"]);

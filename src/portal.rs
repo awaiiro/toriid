@@ -398,6 +398,9 @@ fn html_unescape(s: &str) -> String {
 
 /// Lenient tag scanner: only understands <form> / <input> / <button> / <select> / <textarea> and their attributes.
 fn parse_forms(src: &str) -> Vec<Form> {
+    // Lowercased once: hostile pages can be large and full of <script>/<button>, and lowercasing the rest of
+    // the document at every such tag would be quadratic.
+    let lower_src = src.to_ascii_lowercase();
     let mut forms: Vec<Form> = vec![];
     let mut cur: Option<Form> = None;
     let bytes = src.as_bytes();
@@ -420,7 +423,7 @@ fn parse_forms(src: &str) -> Vec<Form> {
         let name_end = body.find(|c: char| c.is_whitespace() || c == '/').unwrap_or(body.len());
         let tag = body[..name_end].to_ascii_lowercase();
         if tag == "script" && !closing {
-            i = src[i..].to_ascii_lowercase().find("</script").map(|e| i + e).unwrap_or(bytes.len());
+            i = lower_src[i..].find("</script").map(|e| i + e).unwrap_or(bytes.len());
             continue;
         }
         if closing {
@@ -443,9 +446,8 @@ fn parse_forms(src: &str) -> Vec<Form> {
                 if let Some(f) = cur.as_mut() {
                     // <button>Log in</button>: the visible text up to </button>, tags stripped
                     let label = if tag == "button" {
-                        let rest = &src[i..];
-                        let end = rest.to_ascii_lowercase().find("</button").unwrap_or(0);
-                        strip_tags(&rest[..end])
+                        let end = lower_src[i..].find("</button").unwrap_or(0);
+                        strip_tags(&src[i..i + end])
                     } else {
                         String::new()
                     };
@@ -667,7 +669,7 @@ fn run_inside(gw: Option<Ipv4Addr>, resolvers: Vec<Ipv4Addr>, dry: bool) -> Repo
     }
 
     // ── follow redirects hop by hop, looking for a form ──
-    // We follow redirects ourselves (max_redirects 0): Xfinity puts the whole User-Agent verbatim into the
+    // We follow redirects ourselves (max_redirects 0): some ISP hotspots put the whole User-Agent verbatim into the
     // Location query, spaces and parentheses included, and the HTTP library rejects it as a malformed header.
     // Browsers tolerate it, so we must too: take it, percent-encode the illegal characters, then follow.
     let a = agent(&resolvers, Duration::from_secs(12), 0);

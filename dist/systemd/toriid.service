@@ -10,8 +10,6 @@ StartLimitBurst=10
 
 [Service]
 Type=simple
-# /etc/netns comes from tmpfiles.d (toriid.conf); systemd checks ReadWritePaths before running anything,
-# so it cannot be created from inside this unit. "-" keeps a missing directory from blocking startup.
 ExecStart=/usr/bin/toriid daemon
 Restart=always
 RestartSec=3
@@ -31,7 +29,10 @@ ConfigurationDirectory=toriid
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE CAP_SYS_ADMIN CAP_SYS_CHROOT CAP_SYS_PTRACE CAP_KILL CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_SETUID CAP_SETGID CAP_SYS_MODULE
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/run /var/lib/toriid -/etc/netns /proc/sys/net
+# /etc/toriid: key rotation stores new wstunnel keys there (written by the daemon, never by the user).
+# /etc/netns comes from tmpfiles.d (toriid.conf): systemd checks these paths before running anything, so
+# it cannot be created from this unit; "-" keeps a missing one from blocking startup.
+ReadWritePaths=/run /var/lib/toriid -/etc/netns -/etc/toriid /proc/sys/net
 PrivateTmp=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes

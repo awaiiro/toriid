@@ -28,7 +28,7 @@ protect   killswitch loaded | LAN blocked
 - waybar、polybar、i3blocks、eww/ags、Quickshell 向けのステータス出力
 
 WireGuard ならどのプロバイダでも自前サーバーでも使える。TLS の段には VPS が必要で、
-[`server/`](server) で一発で用意できる。
+[`server/`](server) のスクリプトで用意できる。
 
 ## 実際の使われ方
 
@@ -57,9 +57,13 @@ sudo install -m644 dist/systemd/*.service /etc/systemd/system/
 sudo install -Dm644 dist/tmpfiles/toriid.conf /etc/tmpfiles.d/toriid.conf
 sudo systemd-tmpfiles --create toriid.conf
 sudo systemctl enable --now toriid-killswitch-boot toriid
+sudo install -Dm644 -t /etc/systemd/user dist/systemd/user/*
+systemctl --user enable --now toriid-notify          # デスクトップ通知
 ```
 
-Arch：[`dist/arch/PKGBUILD`](dist/arch/PKGBUILD)。
+libnftables が必要（Debian/Ubuntu でビルドするなら `libnftables-dev`）。x86_64 のビルド済みバイナリは
+[releases](https://github.com/awaiiro/toriid/releases) にある。Arch：[`dist/arch/PKGBUILD`](dist/arch/PKGBUILD)。
+`torii portal` は Firefox を使う。
 
 あとは WireGuard の設定を `/etc/wireguard/wg0.conf` に置き、`/etc/toriid/config.toml` の `operator`
 を自分のユーザー名にして `torii up`。設定項目は [`dist/config.toml`](dist/config.toml)。
