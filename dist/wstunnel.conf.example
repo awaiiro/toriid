@@ -1,0 +1,49 @@
+# /etc/toriid/wstunnel.conf  (mode 0600: contains the access secret)
+#
+# WireGuard wrapped in TLS/WebSocket on port 443, for networks whose DPI blocks both WireGuard
+# and OpenVPN. You need your own carrier server running `wstunnel server`; it forwards to your
+# VPN's WireGuard endpoint. All keys below are required except where marked optional;
+# toriid refuses to run with a partial file rather than guessing defaults.
+
+# ── Carrier servers ────────────────────────────────────────────
+# Space-separated. Several carriers give redundancy and avoid the fingerprint of connecting
+# to the same IP:443 every day. Each one gets its own pinned hole in the kill switch.
+WST_SERVERS="203.0.113.10 203.0.113.11"
+# Default / fallback carrier. The one actually in use is in /run/toriid/wst-carrier.
+WST_SERVER=203.0.113.10
+WST_PORT=443
+
+# ── Access control ─────────────────────────────────────────────
+# The server's --restrict-http-upgrade-path-prefix value: the only access control on the carrier.
+# Passed to the client through the environment, never the command line (/proc/PID/cmdline is
+# world-readable).
+WST_SECRET=<32 random chars, [A-Za-z0-9_-]>
+
+# ── Inner tunnel ───────────────────────────────────────────────
+# The upstream WireGuard endpoint the carrier forwards local UDP to.
+WST_UPSTREAM=198.51.100.20:51820
+# Local listen port; toriid points WireGuard's Endpoint at 127.0.0.1:<this>.
+WST_LOCAL_PORT=51822
+
+# ── TLS variants ───────────────────────────────────────────────
+# Tried in this order, most secure first:
+#   clean      no SNI, certificate verified (when WST_VERIFY=yes)
+#   named      real SNI, certificate verified (e.g. sslip.io encodes the IP in a name LE can sign)
+#   disguised  fake SNI, no verification. Last resort: an on-path attacker can read WST_SECRET
+#              (the inner WireGuard stays end-to-end encrypted).
+WST_VERIFY=yes
+WST_SNI_FALLBACK=www.example.com
+WST_SNI_NAMED=203-0-113-10.sslip.io
+
+# ── Optional: pin a variant per network ────────────────────────
+# Pinned networks only try that variant: no rotation, no daily upgrade probe.
+# Separate entries with ";". SSIDs may contain spaces.
+#WST_PIN="Conference-WiFi=disguised"
+
+# ── Optional: key rotation and audit (`torii wst rotate|audit`) ──
+# Public egress ranges of networks you use. `torii wst audit` summarizes connections on the server
+# by source; anything outside these ranges counts as foreign and triggers a rotation.
+#WST_KNOWN_NETS="198.51.100.0/24"
+# ssh access to the carrier server for key management.
+#WST_SSH=user@carrier.example
+#WST_SSH_KEY=/home/you/.ssh/id_carrier

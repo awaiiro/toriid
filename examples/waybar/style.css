@@ -1,0 +1,8 @@
+/* classes: protected connecting blocked leaking portal off unknown, plus the tunnel name and "critical" */
+#custom-toriid.protected  { color: #a6e3a1; }
+#custom-toriid.connecting { color: #f9e2af; }
+#custom-toriid.blocked    { color: #fab387; }
+#custom-toriid.leaking    { color: #1e1e2e; background: #f38ba8; }
+#custom-toriid.portal     { color: #89b4fa; }
+#custom-toriid.off,
+#custom-toriid.unknown    { color: #6c7086; }

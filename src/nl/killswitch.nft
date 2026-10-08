@@ -1,0 +1,129 @@
+#!/usr/sbin/nft -f
+#
+# Kill switch: drop everything by default, open only explicit holes.
+#
+# Rendered by the daemon from config.toml every time a mode is applied; do not edit the
+# generated ruleset by hand. Fail-closed by design: if any rule fails to load, the result
+# is "nothing works", never "silently unprotected".
+
+table inet ks
+delete table inet ks
+
+table inet ks {
+    # LAN allow-list. Empty means no LAN access at all. The daemon fills it on trusted
+    # networks and clears it everywhere else.
+    set lan_allow {
+        type ipv4_addr
+        flags interval
+    }
+
+    set lan_allow6 {
+        type ipv6_addr
+        flags interval
+    }
+
+    chain output {
+        type filter hook output priority filter; policy drop;
+
+        oif "lo" accept
+
+        # Deliberately NO `ct state established accept` here. The moment a tunnel drops,
+        # routing falls back to the physical NIC, and established connections (downloads,
+        # ssh, websockets) would keep flowing in the clear. A mid-session tunnel drop is
+        # the whole reason a kill switch exists, and the symptom is invisible: new
+        # connections are blocked, so a quick curl test looks fine.
+
+        # Anything inside a tunnel.
+        oifname { @@TUNNEL_IFS@@ } accept
+
+@@EXTRA_IFS@@
+        # Tunnel carriers: the only traffic allowed straight out of the physical NIC.
+        # Each hole is pinned to a specific server address and port.
+@@CARRIERS@@
+
+        # DHCP, otherwise no address on any network.
+        udp sport 68 udp dport 67 accept
+        udp sport 546 udp dport 547 accept
+
+        # IPv6 neighbour discovery. Without it IPv6 breaks and everything slows down
+        # (applications try v6, time out, then fall back to v4).
+        icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert,
+                      nd-router-solicit, nd-router-advert,
+                      mld-listener-query, mld-listener-report,
+                      mld2-listener-report } accept
+
+        # LAN, gated by the sets above.
+        ip daddr @lan_allow accept comment "lan"
+        ip6 daddr @lan_allow6 accept comment "lan6"
+        ip6 daddr fe80::/10 accept comment "link-local"
+
+        # Host side of the portal netns veth.
+        ip daddr @@PORTAL_HOST_IP@@ accept comment "portal-veth"
+
+@@VM_OUT@@
+        counter comment "DROPPED-EGRESS"
+    }
+
+    # Traffic from the portal netns bypasses the tunnel by carrying the WireGuard fwmark,
+    # so the tunnel's `not fwmark ... lookup <table>` rule skips it and it falls through
+    # to the main table. Racing for ip-rule priorities does not work (the kernel assigns
+    # min-1 to unnumbered rules), so we opt out of the race instead. Must be prerouting:
+    # the mark has to exist before the routing decision.
+    chain prerouting_mark {
+        type filter hook prerouting priority mangle; policy accept;
+        ip saddr @@PORTAL_IP@@ meta mark set @@WG_MARK@@ comment "portal-bypass-tunnel"
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        # Established/related only on the portal veth, so connections die with portal mode.
+        iifname "to-portal" ct state established,related accept
+        oifname "to-portal" ct state established,related accept
+
+        # Portal netns -> physical network, unprotected. Only that single source address, and never into a
+        # tunnel, the tailnet or a VM bridge: the portal page is untrusted and gets the bare network only.
+        # (The LAN stays reachable on purpose: portal servers often live on the gateway.)
+        ip saddr @@PORTAL_IP@@ oifname != { @@NO_PORTAL_IFS@@ } accept comment "portal-out"
+
+@@VM_FORWARD@@
+        counter comment "DROPPED-FORWARD"
+    }
+
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        iif "lo" accept
+        ct state established,related accept
+
+        icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert,
+                      nd-router-solicit, nd-router-advert } accept
+        icmp type echo-request limit rate 5/second accept
+
+        udp sport 67 udp dport 68 accept
+        udp sport 547 udp dport 546 accept
+
+        # Inbound LAN, gated by the same sets. Needed because mDNS replies are multicast
+        # and never match conntrack; LAN file sharing also needs real inbound connections.
+        ip saddr @lan_allow accept comment "lan-in"
+        ip6 saddr @lan_allow6 accept comment "lan-in6"
+
+@@TAILSCALE_IN@@
+        # Replies only: a page loaded in the portal browser must not reach services listening on the host.
+        iifname "to-portal" ct state established,related accept
+
+@@VM_IN@@
+        counter comment "DROPPED-INPUT"
+    }
+}
+
+# Portal netns needs source NAT to leave through the physical NIC.
+table ip ksnat
+delete table ip ksnat
+
+table ip ksnat {
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        ip saddr @@PORTAL_IP@@ oifname != "@@WG_IF@@" masquerade comment "portal-masq"
+    }
+}

@@ -1,0 +1,4 @@
+# Simple variant: re-run every 5 seconds (cheap: reads /run/toriid only, never touches the network).
+[toriid]
+command=torii bar i3blocks --once --icons text
+interval=5

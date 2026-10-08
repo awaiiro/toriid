@@ -1,0 +1,9 @@
+; toriid pushes one JSON object per change.
+(deflisten toriid :initial '{"state":"unknown","mode":"unknown","tunnel":"","exit_ip":"","network":{"ssid":""}}'
+  "torii watch")
+
+(defwidget toriid []
+  (button :class "toriid ${toriid.state}"
+          :onclick "torii portal"
+          :tooltip "${toriid.mode} ${toriid.tunnel} ${toriid.exit_ip}"
+    "${toriid.tunnel != '' ? toriid.tunnel : toriid.state}"))

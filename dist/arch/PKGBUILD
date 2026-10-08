@@ -1,0 +1,50 @@
+# Maintainer: awaiiro <332003006+awaiiro@users.noreply.github.com>
+pkgname=toriid
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Fail-closed network controller for laptops on hostile networks: kill switch, tunnel fallback ladder, captive portals"
+arch=('x86_64' 'aarch64')
+url="https://github.com/awaiiro/toriid"
+license=('MIT')
+depends=('nftables' 'systemd' 'gcc-libs')
+makedepends=('cargo')
+optdepends=(
+  'iwd: Wi-Fi backend'
+  'networkmanager: Wi-Fi backend'
+  'openvpn: TCP rung of the tunnel ladder'
+  'wstunnel: TLS rung of the tunnel ladder (needs your own carrier server)'
+  'tailscale: tailnet inside the tunnel'
+)
+backup=('etc/toriid/config.toml')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  cargo test --frozen
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/toriid "$pkgdir/usr/bin/toriid"
+  ln -s toriid "$pkgdir/usr/bin/torii"
+  install -Dm644 dist/config.toml "$pkgdir/etc/toriid/config.toml"
+  install -Dm644 dist/wstunnel.conf.example "$pkgdir/usr/share/doc/toriid/wstunnel.conf.example"
+  install -Dm644 -t "$pkgdir/usr/lib/systemd/system" dist/systemd/*.service
+  install -Dm644 -t "$pkgdir/usr/lib/systemd/user" dist/systemd/user/*
+  install -Dm644 dist/tmpfiles/toriid.conf "$pkgdir/usr/lib/tmpfiles.d/toriid.conf"
+  install -Dm644 -t "$pkgdir/usr/share/doc/toriid" README.md docs/*.md
+  cp -r examples "$pkgdir/usr/share/doc/toriid/"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

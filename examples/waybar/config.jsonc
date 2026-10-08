@@ -1,0 +1,10 @@
+// ~/.config/waybar/config.jsonc — add "custom/toriid" to modules-left/right
+"custom/toriid": {
+    // Long-running: toriid pushes a line on every change, no polling interval needed.
+    "exec": "torii bar waybar --icons nerd",
+    "return-type": "json",
+    "restart-interval": 5,
+    "format": "{}",
+    "on-click": "torii portal",
+    "on-click-right": "torii up"
+}

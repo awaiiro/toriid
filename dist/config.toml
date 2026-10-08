@@ -1,0 +1,63 @@
+# toriid configuration: /etc/toriid/config.toml
+# Every key is optional; the values shown are the defaults. Unknown keys are rejected.
+# Changes are picked up without a restart. Validate with: torii check-config
+
+[daemon]
+# The person using this machine. They can run `torii up` / `torii portal` without sudo, and the portal
+# browser and notifications open in their session. Default: the owner of the wstunnel config.
+operator = ""
+
+[networks]
+# Trusted networks (SSIDs). Only these get LAN access (printers, file sharing, ssh to local hosts).
+# Everything else is treated as hostile.
+trusted = []
+
+# Pin a mode per network: skip history and fallbacks, always use this one.
+# Useful when you already know a network blocks UDP or runs DPI.
+[networks.pin]
+# "Hotel Guest" = "openvpn"
+# "Conference-WiFi" = "wstunnel"
+
+[watchdog]
+# Bring protection up automatically at boot / after switching networks.
+auto_bootstrap = true
+# Try to pass click-through captive portals automatically (inside the isolated portal namespace).
+auto_portal = false
+# Mode for networks with no history: auto, wireguard, openvpn or wstunnel.
+default_mode = "auto"
+# After switching networks, re-pick the mode from that network's history.
+reevaluate_on_network_change = true
+# Rounds of "can't tell" connectivity before treating the network as having no exit.
+unknown_max = 3
+
+[tunnels]
+# The fallback ladder `torii up` (mode auto) climbs, top first. Rungs that are not configured below
+# are skipped, so the default works whether or not you have OpenVPN or a carrier server.
+ladder = ["wireguard", "openvpn", "wstunnel"]
+
+[wireguard]
+# wg-quick style config. toriid parses it and configures the interface itself;
+# PostUp/PostDown hooks are NOT executed. Endpoint should be an IP address.
+config = "/etc/wireguard/wg0.conf"
+
+[openvpn]
+# TCP 443 fallback. If the file does not exist, this rung of the ladder is skipped.
+config = "/etc/openvpn/client/torii-tcp.conf"
+unit = "openvpn-client@torii-tcp"
+interface = "torii-tcp"
+
+[wstunnel]
+# WireGuard wrapped in TLS/WebSocket on 443, for networks with DPI. Needs your own carrier server.
+# If the file does not exist, this rung is skipped. See wstunnel.conf.example.
+config = "/etc/toriid/wstunnel.conf"
+client = "/usr/bin/wstunnel"
+
+[killswitch]
+# VM bridges (e.g. "virbr0"). Guests may only leave through the tunnel.
+vm_bridges = []
+# Extra interfaces allowed to send anything (only ones you know route into the tunnel themselves).
+allow_interfaces = []
+
+[tailscale]
+# If tailscale0 exists: run the tailnet inside the tunnel and route MagicDNS to tailscale0.
+integrate = true

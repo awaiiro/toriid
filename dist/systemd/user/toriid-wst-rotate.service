@@ -1,0 +1,15 @@
+[Unit]
+Description=toriid: audit wstunnel connections and rotate the key when due
+Documentation=https://github.com/awaiiro/toriid
+# StartLimit* belongs in [Unit]; in [Service] it is silently ignored.
+StartLimitIntervalSec=1h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+# Postpones itself while the tunnel in use is wstunnel: the ssh session would ride the tunnel it reconfigures.
+ExecStart=/usr/bin/torii wst scheduled
+# Normally takes seconds; a hard ceiling stops a stuck ssh from hanging around.
+TimeoutStartSec=180
+Restart=on-failure
+RestartSec=60

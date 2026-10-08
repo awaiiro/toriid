@@ -1,0 +1,12 @@
+[Unit]
+Description=toriid: daily wstunnel key audit / rotation
+
+[Timer]
+OnCalendar=daily
+# Not Persistent: a catch-up run would land in the first seconds after boot, when overlay
+# networks used to reach the server are least likely to be ready. Rotation is weekly maintenance.
+OnBootSec=15min
+RandomizedDelaySec=20min
+
+[Install]
+WantedBy=timers.target

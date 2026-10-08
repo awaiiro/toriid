@@ -1,0 +1,20 @@
+[Unit]
+Description=toriid: load the last kill switch ruleset at boot (fail-closed start)
+Documentation=https://github.com/awaiiro/toriid
+# Must run before any network comes up; anything later leaves an unprotected window.
+DefaultDependencies=no
+Before=network-pre.target NetworkManager.service iwd.service
+Wants=network-pre.target
+After=local-fs.target
+# Written by the daemon every time it applies a mode. Absent on first install: nothing to load yet.
+ConditionPathExists=/var/lib/toriid/killswitch.nft
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Syntax check first: a broken ruleset loaded here means no network at boot.
+ExecStartPre=/usr/bin/nft -c -f /var/lib/toriid/killswitch.nft
+ExecStart=/usr/bin/nft -f /var/lib/toriid/killswitch.nft
+
+[Install]
+WantedBy=multi-user.target

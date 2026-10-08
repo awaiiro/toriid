@@ -1,0 +1,44 @@
+[package]
+name = "toriid"
+version = "0.1.0"
+repository = "https://github.com/awaiiro/toriid"
+readme = "README.md"
+keywords = ["vpn", "kill-switch", "wireguard", "captive-portal", "nftables"]
+categories = ["network-programming", "command-line-utilities"]
+edition = "2021"
+description = "Fail-closed network controller for laptops on hostile networks: kill switch, tunnel fallback ladder, captive portals, watchdog"
+license = "MIT"
+
+[[bin]]
+name = "toriid"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "process", "signal", "fs"] }
+futures = "0.3"
+rtnetlink = "0.23"
+netlink-packet-route = "0.33"
+netlink-packet-core = "0.9"
+netlink-sys = { version = "0.9", features = ["tokio_socket"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+wireguard-control = "2"
+iwdrs = { version = "0.2", default-features = false, features = ["tokio"] }
+nix = { version = "0.31", features = ["fs", "sched", "mount", "user", "process", "net", "socket", "inotify", "poll"] }
+libc = "0.2"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+socket2 = { version = "0.6", features = ["all"] }
+ureq = { version = "3", default-features = false, features = ["rustls", "cookies"] }
+url = "2"
+rand = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+base64 = "0.22"
+toml = "0.8"
+
+[profile.release]
+opt-level = 2
+# Stripped: debug info embeds absolute build paths (your home directory) in the binary.
+strip = true

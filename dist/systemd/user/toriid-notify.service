@@ -1,0 +1,13 @@
+[Unit]
+Description=toriid desktop notifications
+Documentation=https://github.com/awaiiro/toriid
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/torii notify
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

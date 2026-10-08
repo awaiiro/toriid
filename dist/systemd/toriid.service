@@ -1,0 +1,43 @@
+[Unit]
+Description=toriid network controller (kill switch, tunnel ladder, captive portals, watchdog)
+Documentation=https://github.com/awaiiro/toriid
+# The boot-time kill switch must be in place first (fail-closed from the start).
+After=toriid-killswitch-boot.service systemd-resolved.service iwd.service NetworkManager.service
+Wants=toriid-killswitch-boot.service
+# Crash-loop guard. These belong in [Unit]; in [Service] systemd ignores them.
+StartLimitIntervalSec=120
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# /etc/netns comes from tmpfiles.d (toriid.conf); systemd checks ReadWritePaths before running anything,
+# so it cannot be created from inside this unit. "-" keeps a missing directory from blocking startup.
+ExecStart=/usr/bin/toriid daemon
+Restart=always
+RestartSec=3
+# Signal only the daemon. The wstunnel child stays alive in the cgroup and the new daemon adopts it,
+# so restarting the daemon does not drop the tunnel. The default (control-group) kills the child too.
+KillMode=process
+
+RuntimeDirectory=toriid
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+StateDirectory=toriid
+ConfigurationDirectory=toriid
+
+# Root is needed for netlink, nftables, network namespaces and /proc/sys/net.
+# CAP_SYS_CHROOT: the thread that builds the portal netns setns()es into PID 1's mount namespace,
+# otherwise the /run/netns bind-mount only exists inside this unit and `ip netns exec` fails with EINVAL.
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE CAP_SYS_ADMIN CAP_SYS_CHROOT CAP_SYS_PTRACE CAP_KILL CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_SETUID CAP_SETGID CAP_SYS_MODULE
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run /var/lib/toriid -/etc/netns /proc/sys/net
+PrivateTmp=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# The /run/netns bind-mount has to happen in the host mount namespace.
+PrivateMounts=no
+
+[Install]
+WantedBy=multi-user.target

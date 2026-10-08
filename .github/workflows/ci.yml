@@ -1,0 +1,25 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libnftables-dev nftables
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked
+      - run: cargo test --locked
+      - run: cargo clippy --locked -- -D clippy::correctness
+      - name: dependency advisories
+        run: cargo install cargo-audit --locked --quiet && cargo audit
+      - name: kill switch ruleset passes nft -c
+        run: TORIID_DUMP_RULESET=$PWD/ks.nft cargo test --locked dump_full_ruleset && sudo nft -c -f ks.nft
+      - name: kill switch leak test (real packets in throwaway namespaces)
+        run: sudo TORIID_RULES=$PWD/ks.nft test/leak-test.sh --as-root
+      - name: no CJK in code
+        run: "! grep -rnP '[\\x{3000}-\\x{30ff}\\x{3400}-\\x{9fff}\\x{ff00}-\\x{ffef}]' src server dist examples docs test"
