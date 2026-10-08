@@ -1,6 +1,6 @@
 # Maintainer: awaiiro <332003006+awaiiro@users.noreply.github.com>
 pkgname=toriid
-pkgver=0.1.1
+pkgver=0.1.2
 pkgrel=1
 pkgdesc="Fail-closed network controller for laptops on hostile networks: kill switch, tunnel fallback ladder, captive portals"
 arch=('x86_64' 'aarch64')

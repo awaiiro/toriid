@@ -30,6 +30,18 @@ protect   killswitch loaded | LAN blocked
 WireGuard ならどのプロバイダでも自前サーバーでも使える。TLS の段には VPS が必要で、
 [`server/`](server) のスクリプトで用意できる。
 
+```mermaid
+flowchart LR
+  apps["apps"] --> ks["kill switch<br/>(default drop)"]
+  ks --> wg["WireGuard / UDP"] --> vpn["your VPN"]
+  ks --> ov["OpenVPN / TCP 443"] --> vpn
+  ks --> ws["WireGuard in TLS 443"] --> vps["your VPS"] --> vpn
+  ks -. "tunnel down" .-x out["direct to the network"]
+  vpn --> net["internet"]
+```
+
+仕組みの詳細（英語）：[`docs/architecture.md`](docs/architecture.md)。
+
 ## 実際の使われ方
 
 普段使っているネットワークでの動き：

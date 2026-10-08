@@ -29,6 +29,18 @@ protect   killswitch loaded | LAN blocked
 Works with any WireGuard provider or your own server. The TLS fallback needs a VPS;
 [`server/`](server) sets one up.
 
+```mermaid
+flowchart LR
+  apps["apps"] --> ks["kill switch<br/>(default drop)"]
+  ks --> wg["WireGuard / UDP"] --> vpn["your VPN"]
+  ks --> ov["OpenVPN / TCP 443"] --> vpn
+  ks --> ws["WireGuard in TLS 443"] --> vps["your VPS"] --> vpn
+  ks -. "tunnel down" .-x out["direct to the network"]
+  vpn --> net["internet"]
+```
+
+How it works in detail: [`docs/architecture.md`](docs/architecture.md).
+
 ## In practice
 
 What it does on the networks it's used on day to day:

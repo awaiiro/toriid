@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2
+
+Documentation only.
+
+- `docs/architecture.md`: processes and channels, the tunnel ladder, a packet's path through routing
+  rules and the kill switch, the watchdog, captive portals, permissions and files, with diagrams.
+- README: an overview diagram and a link to the architecture page.
+
 ## 0.1.1
 
 Fixes from a full review after the first release.
