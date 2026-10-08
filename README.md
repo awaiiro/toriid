@@ -8,13 +8,7 @@ If the tunnel is down, nothing goes out. If WireGuard is blocked, it falls back 
 TCP 443, then to WireGuard inside TLS ([wstunnel](https://github.com/erebe/wstunnel)). Captive portals
 are handled in an isolated namespace without turning the kill switch off.
 
-```
-$ torii
-mode      auto | WireGuard/UDP
-phase     up | exit 198.51.100.20 | handshake 12s ago
-network   Cafe-Guest (hostile) | wlan0 | connectivity full
-protect   killswitch loaded | LAN blocked
-```
+![torii up on a network that blocks UDP and OpenVPN: it falls back to WireGuard inside TLS, then reports protected (example output)](docs/img/torii.svg)
 
 ## Features
 

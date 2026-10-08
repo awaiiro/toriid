@@ -9,13 +9,7 @@
 包んだ WireGuard（[wstunnel](https://github.com/erebe/wstunnel)）に切り替える。キャプティブポータルは
 隔離した namespace で処理し、その間もキルスイッチは切らない。
 
-```
-$ torii
-mode      auto | WireGuard/UDP
-phase     up | exit 198.51.100.20 | handshake 12s ago
-network   Cafe-Guest (hostile) | wlan0 | connectivity full
-protect   killswitch loaded | LAN blocked
-```
+![UDP も OpenVPN も通らないネットワークでの torii up：TLS 内の WireGuard まで下がって保護状態になる（出力例）](docs/img/torii.svg)
 
 ## 機能
 

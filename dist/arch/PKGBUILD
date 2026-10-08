@@ -18,6 +18,8 @@ optdepends=(
   'openssh: wstunnel key rotation on your carrier server'
 )
 install=toriid.install
+# makepkg's LTO turns ring's C objects into GCC LTO bytecode that rust's linker cannot read
+options=('!lto' '!debug')
 backup=('etc/toriid/config.toml')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')  # fill in after tagging: updpkgsums

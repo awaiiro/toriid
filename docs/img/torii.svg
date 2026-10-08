@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 399" width="820" height="399" role="img" aria-label="torii up falls back from WireGuard and OpenVPN to WireGuard inside TLS on a network that blocks both, then torii shows the protected status. Example output; addresses are documentation ranges.">
+<rect width="820" height="399" rx="10" fill="#0d0b0f"/>
+<rect width="820" height="34" rx="10" fill="#1b1720"/><rect y="24" width="820" height="10" fill="#1b1720"/>
+<circle cx="22" cy="17" r="5.5" fill="#f05667"/><circle cx="40" cy="17" r="5.5" fill="#e2a640"/><circle cx="58" cy="17" r="5.5" fill="#47c48a"/>
+<text x="410" y="21" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#9b91a5">torii</text>
+<g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="13.5" xml:space="preserve">
+<text x="24" y="64" fill="#ece7f0"><tspan fill="#e2307c">$</tspan> torii up</text>
+<text x="24" y="85" fill="#ece7f0">  › WireGuard | UDP 51820… <tspan fill="#9b91a5">failed, UDP may be blocked</tspan></text>
+<text x="24" y="106" fill="#ece7f0">  › OpenVPN | TCP… <tspan fill="#9b91a5">failed, looks like DPI recognized the protocol</tspan></text>
+<text x="24" y="127" fill="#ece7f0">  › waiting for physical network: carrier 203.0.113.10:443 via wlan0… <tspan fill="#47c48a">reachable after 0s</tspan></text>
+<text x="24" y="148" fill="#ece7f0">  › wstunnel[clean]: starting client… <tspan fill="#47c48a">ready</tspan></text>
+<text x="24" y="169" fill="#ece7f0">  › wstunnel[clean]: carrier handshake… <tspan fill="#47c48a">101 in 0.4s</tspan></text>
+<text x="24" y="190" fill="#ece7f0">  › wstunnel[clean]: testing link (up to 40s)… <tspan fill="#47c48a">up in 1.8s, exit 198.51.100.20</tspan></text>
+<text x="24" y="211" fill="#ece7f0"><tspan fill="#e2307c" font-weight="bold">✓</tspan> auto | wstunnel | exit 198.51.100.20</text>
+<text x="24" y="253" fill="#ece7f0"><tspan fill="#e2307c">$</tspan> torii</text>
+<text x="24" y="274" fill="#ece7f0"><tspan fill="#9b91a5">mode     </tspan>auto | WireGuard in TLS 443 via carrier server[clean]</text>
+<text x="24" y="295" fill="#ece7f0"><tspan fill="#9b91a5">phase    </tspan>up | exit 198.51.100.20 | handshake 4s ago</text>
+<text x="24" y="316" fill="#ece7f0"><tspan fill="#9b91a5">network  </tspan>Hotel-Guest (hostile) | wlan0 02:00:5e:10:00:01 | conn full</text>
+<text x="24" y="337" fill="#ece7f0"><tspan fill="#9b91a5">protect  </tspan>killswitch loaded | LAN not allowed</text>
+<text x="24" y="358" fill="#ece7f0"><tspan fill="#9b91a5">watchdog </tspan>healthy | 0 failures | probes 1/cached 0 | last action 6s ago | daemon started 3h ago</text>
+</g></svg>
