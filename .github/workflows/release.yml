@@ -1,0 +1,31 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libnftables-dev nftables
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked
+      - run: cargo build --locked --release
+      - name: package
+        run: |
+          set -eu
+          name="toriid-${GITHUB_REF_NAME}-x86_64-linux"
+          mkdir -p "$name"
+          cp target/release/toriid "$name/"
+          cp -r dist examples docs server LICENSE README.md README.ja.md CHANGELOG.md "$name/"
+          tar czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          awk -v v="${GITHUB_REF_NAME#v}" '$0 ~ "^## "v {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" toriid-*.tar.gz toriid-*.sha256 --title "toriid $GITHUB_REF_NAME" --notes-file notes.md

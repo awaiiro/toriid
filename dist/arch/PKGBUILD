@@ -17,7 +17,7 @@ optdepends=(
 )
 backup=('etc/toriid/config.toml')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('SKIP')  # fill in after tagging: updpkgsums
 
 prepare() {
   cd "$pkgname-$pkgver"

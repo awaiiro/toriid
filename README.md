@@ -29,6 +29,23 @@ protect   killswitch loaded | LAN blocked
 Works with any WireGuard provider or your own server. The TLS fallback needs a VPS;
 [`server/`](server) sets one up.
 
+## In practice
+
+What it does on the networks it's used on day to day:
+
+| Network | What happens |
+|---|---|
+| Home (listed in `trusted`) | WireGuard; LAN devices (printer, NAS, ssh) reachable |
+| Cafe | WireGuard; LAN blocked |
+| Guest Wi-Fi that blocks UDP | WireGuard times out, OpenVPN on TCP 443 takes over |
+| Network with DPI that kills OpenVPN too | falls through to WireGuard in TLS; next time it starts there |
+| Hotel with an "Accept" page | portal passed automatically, then back to WireGuard |
+| Portal that wants a room number or password | notification; `torii portal` opens the page in an isolated browser |
+| Laptop wakes up on a different network | watchdog notices, picks the mode that worked there last time |
+
+In every case nothing leaves the laptop outside the tunnel, including while it is switching.
+The bar shows what's going on; you only act when it asks you to.
+
 ## Install
 
 ```sh
